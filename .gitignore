@@ -1,0 +1,14 @@
+# Dependencias de Node (muy pesadas)
+node_modules/
+frontend/node_modules/
+
+# Variables secretas (contraseñas y llaves de DB)
+.env
+
+# Archivos de construcción (se generan solos en la nube)
+frontend/build/
+dist/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
