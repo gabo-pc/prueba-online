@@ -10,6 +10,9 @@ function App() {
   const [esAdmin, setEsAdmin] = useState(false);
   const [filtroCategoria, setFiltroCategoria] = useState('Todos');
 
+  // URL BASE DEL BACKEND (Corregida)
+  const API_URL = 'https://prueba-online.onrender.com/api/productos';
+
   // --- CARGAR DATOS AL INICIAR ---
   useEffect(() => {
     const carritoGuardado = localStorage.getItem('carrito');
@@ -29,7 +32,7 @@ function App() {
   }, [carrito]);
 
   const obtenerProductos = () => {
-    axios.get('https://prueba-online.onreder.com/api/productos')
+    axios.get(API_URL)
       .then(res => setProductos(res.data))
       .catch(err => console.error("Error al obtener productos:", err));
   };
@@ -43,23 +46,28 @@ function App() {
   const guardarProducto = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('https://prueba-online.onreder.com/api/productos', nuevoProducto);
+      await axios.post(API_URL, nuevoProducto);
       setNuevoProducto({ nombre: '', descripcion: '', precio: '', imagen: '', stock: 0, categoria: '' });
       obtenerProductos();
       alert("Producto guardado con éxito");
     } catch (error) {
+      console.error(error);
       alert("Error al guardar producto");
     }
   };
 
   const eliminarProducto = async (id) => {
     if (window.confirm("¿Eliminar producto?")) {
-      await axios.delete(`https://prueba-online.onreder.com/api/productos${id}`);
-      obtenerProductos();
+      try {
+        await axios.delete(`${API_URL}/${id}`);
+        obtenerProductos();
+      } catch (error) {
+        alert("Error al eliminar");
+      }
     }
   };
 
-  // --- LÓGICA DEL CARRITO CORREGIDA ---
+  // --- LÓGICA DEL CARRITO ---
   const agregarAlCarrito = (producto) => {
     const stockDisponible = Number(producto.stock);
     if (stockDisponible <= 0) return alert("¡Producto agotado!");
@@ -76,7 +84,6 @@ function App() {
           item._id === producto._id ? { ...item, cantidad: item.cantidad + 1 } : item
         );
       }
-      // Aseguramos que el precio sea número al entrar al carrito
       return [...prevCarrito, { ...producto, precio: Number(producto.precio), cantidad: 1 }];
     });
   };
@@ -85,32 +92,29 @@ function App() {
     setCarrito(carrito.filter(item => item._id !== id));
   };
 
-  // --- CÁLCULOS (Convertimos a número explícitamente) ---
+  // --- CÁLCULOS ---
   const totalDinero = carrito.reduce((sum, item) => sum + (Number(item.precio) * item.cantidad), 0);
   const totalItems = carrito.reduce((acc, item) => acc + item.cantidad, 0);
 
-  // --- COMPRA POR WHATSAPP CORREGIDA ---
+  // --- COMPRA POR WHATSAPP ---
   const enviarWhatsApp = async () => {
     if (carrito.length === 0) return alert("El carrito está vacío");
 
     try {
-      // 1. Actualizar stock en la base de datos para cada producto
+      // Actualizar stock en la base de datos
       for (const item of carrito) {
-        await axios.put(`https://prueba-online.onreder.com/api/productos${item._id}`, {
+        await axios.put(`${API_URL}/${item._id}`, {
           stock: Number(item.stock) - item.cantidad
         });
       }
 
-      // 2. Crear mensaje
       const telefono = "584246322487"; 
       const listaProductos = carrito.map(p => `- ${p.cantidad}x ${p.nombre} ($${Number(p.precio).toFixed(2)} c/u)`).join('\n');
       const mensaje = `¡Hola! Quisiera realizar este pedido:\n\n${listaProductos}\n\n*Total a pagar: $${totalDinero.toFixed(2)}*`;
       
-      // 3. Abrir link
       const url = `https://api.whatsapp.com/send?phone=${telefono}&text=${encodeURIComponent(mensaje)}`;
       window.open(url, '_blank');
       
-      // 4. Limpiar carrito y refrescar UI
       setCarrito([]); 
       obtenerProductos(); 
     } catch (error) {
@@ -180,14 +184,14 @@ function App() {
             ) : (
               productosFiltrados.map(p => (
                 <div key={p._id} className="col-lg-4 col-md-6 mb-4">
-                  <div className="card h-100 shadow-sm border-0 product-card">
+                  <div className="card h-100 shadow-sm border-0">
                     {esAdmin && (
                       <button onClick={() => eliminarProducto(p._id)} className="btn btn-danger btn-sm position-absolute top-0 end-0 m-2 shadow">Eliminar</button>
                     )}
                     <img src={p.imagen || "https://via.placeholder.com/300x200?text=Sin+Imagen"} className="card-img-top" alt={p.nombre} style={{height: '180px', objectFit: 'cover'}}/>
                     <div className="card-body d-flex flex-column">
                       <div className="mb-2">
-                        <span className="badge bg-soft-primary text-primary border border-primary mb-1">{p.categoria}</span>
+                        <span className="badge bg-light text-primary border border-primary mb-1">{p.categoria}</span>
                         <h5 className="fw-bold mb-0">{p.nombre}</h5>
                       </div>
                       <p className="text-muted small flex-grow-1">{p.descripcion}</p>
@@ -213,7 +217,7 @@ function App() {
         </div>
       </div>
 
-      {/* FOOTER DE COMPRA (SOLO SI HAY PRODUCTOS) */}
+      {/* FOOTER DE COMPRA */}
       {carrito.length > 0 && (
         <div className="fixed-bottom p-4 bg-white shadow-lg border-top">
           <div className="container d-flex flex-column flex-md-row justify-content-between align-items-center">
@@ -231,8 +235,6 @@ function App() {
           </div>
         </div>
       )}
-      
-      {/* Espacio extra al final para que el footer no tape productos */}
       <div style={{height: '120px'}}></div>
     </div>
   );
