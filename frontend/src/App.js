@@ -29,7 +29,7 @@ function App() {
   }, [carrito]);
 
   const obtenerProductos = () => {
-    axios.get('http://localhost:5000/api/productos')
+    axios.get('https://prueba-online.onreder.com/api/productos')
       .then(res => setProductos(res.data))
       .catch(err => console.error("Error al obtener productos:", err));
   };
@@ -43,7 +43,7 @@ function App() {
   const guardarProducto = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/productos', nuevoProducto);
+      await axios.post('https://prueba-online.onreder.com/api/productos', nuevoProducto);
       setNuevoProducto({ nombre: '', descripcion: '', precio: '', imagen: '', stock: 0, categoria: '' });
       obtenerProductos();
       alert("Producto guardado con éxito");
@@ -54,7 +54,7 @@ function App() {
 
   const eliminarProducto = async (id) => {
     if (window.confirm("¿Eliminar producto?")) {
-      await axios.delete(`http://localhost:5000/api/productos/${id}`);
+      await axios.delete(`https://prueba-online.onreder.com/api/productos${id}`);
       obtenerProductos();
     }
   };
@@ -96,7 +96,7 @@ function App() {
     try {
       // 1. Actualizar stock en la base de datos para cada producto
       for (const item of carrito) {
-        await axios.put(`http://localhost:5000/api/productos/${item._id}`, {
+        await axios.put(`https://prueba-online.onreder.com/api/productos${item._id}`, {
           stock: Number(item.stock) - item.cantidad
         });
       }
