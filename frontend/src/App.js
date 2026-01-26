@@ -130,7 +130,7 @@ function App() {
       {/* CABECERA */}
       <div className="row mb-4 align-items-center">
         <div className="col-md-8 text-center text-md-start">
-          <h1 className="fw-bold text-primary" onClick={loginAdmin} style={{cursor: 'pointer'}}>⚡ TechStore Pro</h1>
+          <h1 className="fw-bold text-primary" onClick={loginAdmin} style={{cursor: 'pointer'}}>⚡tienda Stela</h1>
           <div className="mt-3">
             {categoriasUnicas.map(cat => (
               <button 
