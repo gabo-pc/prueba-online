@@ -7,7 +7,9 @@ import { auth } from './firebaseConfig';
 import { 
   getAuth, 
   signInWithEmailAndPassword, 
-  sendPasswordResetEmail 
+  sendPasswordResetEmail,
+  createUserWithEmailAndPassword,
+  sendEmailVerification
 } from "firebase/auth";
 
 // --- CONFIGURACIÓN DE IMÁGENES ---
@@ -47,9 +49,68 @@ function App() {
   // NUEVO: estado para mostrar panel del carrito
   const [mostrarCarritoPanel, setMostrarCarritoPanel] = useState(false);
 
+  // ---------- NUEVOS ESTADOS / LÓGICA PARA SUGERENCIAS ----------
+  // Panel de sugerencias (solo dentro de la tienda)
+  const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
+  const [sugerencias, setSugerencias] = useState([]);
+  const [nuevoComentario, setNuevoComentario] = useState('');
+  const [nuevaCalificacion, setNuevaCalificacion] = useState(5);
+  // Mantener una referencia al usuario actual de Firebase (si está autenticado)
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // ------------------------------------------------------------
+
+  // Agregar cerca de los otros useState (por ejemplo justo después de mostrarCarritoPanel)
+  const [mostrarContacto, setMostrarContacto] = useState(false);
+  // Nuevo estado para el panel de SERVICIOS
+  const [mostrarServiciosPanel, setMostrarServiciosPanel] = useState(false);
+
+  // Efecto que enlaza el enlace "SERVICIOS" en la landing para abrir el panel
+
+  useEffect(() => {
+
+    const handler = (e) => {
+    e.preventDefault();
+    setMostrarServiciosPanel(true);
+    };
+
+    // Espera un tick para que el DOM esté montado
+  const timerId = setTimeout(() => {
+
+    try {
+
+      const anchors = Array.from(document.querySelectorAll('nav ul li a'));
+      const servicioAnchor = anchors.find(a => a.textContent && a.textContent.trim().toUpperCase() === 'SERVICIOS');
+      if (servicioAnchor) {
+        servicioAnchor.addEventListener('click', handler);
+      }
+
+    } catch (err) {
+      console.warn('No se pudo enlazar SERVICIOS:', err);
+    }
+  }, 50);
+
+  // cleanup: remover listener si existía
+  return () => {
+    clearTimeout(timerId);
+    try {
+      const anchors = Array.from(document.querySelectorAll('nav ul li a'));
+      const servicioAnchor = anchors.find(a => a.textContent && a.textContent.trim().toUpperCase() === 'SERVICIOS');
+      if (servicioAnchor) {
+        servicioAnchor.removeEventListener('click', handler);
+      }
+    } catch (err) {
+      // noop
+    }
+  };
+}, [mostrarTienda, esRegistro]);
+
+
+
+
   const API_URL = 'https://prueba-online.onrender.com/api/productos';
 
-  // --- NUEVAS FUNCIONES DE FIREBASE (LOGIN Y RECUPERACIÓN) ---
+  // --- NUEVAS FUNCIONES DE FIREBASE (LOGIN Y RECUPERACIÓN useEffect) ---
 
   const manejarLogin = async (e) => {
     e.preventDefault();
@@ -58,6 +119,9 @@ function App() {
       // Intento de inicio de sesión con Firebase
       await signInWithEmailAndPassword(auth, loginData.email, loginData.password);
       
+      // Actualizar usuario actual localmente (auth.currentUser suele contener al usuario)
+      setCurrentUser(auth.currentUser || null);
+
       // Si la contraseña es correcta, entramos a la tienda
       setEsLogin(false);
       setMostrarTienda(true);
@@ -86,13 +150,64 @@ function App() {
   };
 
   // --- EFECTOS EXISTENTES (SIN MODIFICAR) ---
+  // Reemplaza el useEffect de mount por este (carga productos y observa auth)
   useEffect(() => {
-    const carritoGuardado = localStorage.getItem('carrito');
-    if (carritoGuardado) {
-      try { setCarrito(JSON.parse(carritoGuardado)); } catch (e) { setCarrito([]); }
+  // cargar productos como antes
+  obtenerProductos();
+
+  // cargar sugerencias desde localStorage (persistencia simple)
+  try {
+    const s = localStorage.getItem('sugerencias');
+    if (s) setSugerencias(JSON.parse(s));
+  } catch (e) {
+    console.warn('No se pudieron cargar sugerencias desde localStorage', e);
+  }
+
+  // Observador de auth para cargar carrito por usuario y setear currentUser
+  let unsubscribe = null;
+  try {
+    if (auth && typeof auth.onAuthStateChanged === 'function') {
+      unsubscribe = auth.onAuthStateChanged(async (user) => {
+        setCurrentUser(user || null);
+
+        // Cargar carrito asociado al usuario (o guest)
+        try {
+          const uid = user ? user.uid : null;
+          const cart = loadCartForUid(uid);
+          setCarrito(Array.isArray(cart) ? cart : []);
+        } catch (e) {
+          console.error('Error cargando carrito por uid:', e);
+          setCarrito([]);
+        }
+      });
+    } else {
+      // Fallback: si no hay onAuthStateChanged (raro), intenta usar auth.currentUser
+      const uid = auth && auth.currentUser ? auth.currentUser.uid : null;
+      const cart = loadCartForUid(uid);
+      setCarrito(Array.isArray(cart) ? cart : []);
+      setCurrentUser(auth && auth.currentUser ? auth.currentUser : null);
     }
-    obtenerProductos();
-  }, []);
+  } catch (e) {
+    console.warn('No se pudo establecer observer de auth:', e);
+    setCurrentUser(auth && auth.currentUser ? auth.currentUser : null);
+  }
+
+  return () => {
+    // cleanup observer si existe
+    try { if (unsubscribe) unsubscribe(); } catch (e) { /* noop */ }
+  };
+  }, []); // mantén dependencias vacías para ejecución en mount
+
+
+  // Guarda automáticamente cuando cambia carrito o currentUser
+  useEffect(() => {
+  try {
+    const uid = currentUser ? currentUser.uid : null;
+    saveCartForUid(uid, carrito);
+  } catch (e) {
+    console.error('Error auto-guardando carrito por usuario', e);
+  }
+  }, [carrito, currentUser]);
 
   // --------- AÑADIR DESPUÉS DEL useEffect EXISTENTE ----------
 
@@ -109,13 +224,38 @@ function App() {
   };
 
   // Guardar carrito en localStorage
+  // Reemplaza la función existente guardarCarritoEnLocalStorage por esta
   const guardarCarritoEnLocalStorage = (nuevoCarrito) => {
-    setCarrito(nuevoCarrito);
-    try {
-      localStorage.setItem('carrito', JSON.stringify(nuevoCarrito));
-    } catch (e) {
-      console.error('Error guardando carrito en localStorage', e);
-    }
+  // Actualiza el estado React como antes
+  setCarrito(nuevoCarrito);
+  try {
+    // Guarda en localStorage con clave específica del usuario actual
+    const uid = currentUser ? currentUser.uid : null;
+    saveCartForUid(uid, nuevoCarrito);
+  } catch (e) {
+    console.error('Error guardando carrito en localStorage por usuario', e);
+  }
+  };
+
+  // Helpers para localStorage por usuario (pegar después de guardarCarritoEnLocalStorage)
+  const storageKeyFor = (uid) => `carrito_${uid || 'guest'}`;
+
+  const saveCartForUid = (uid, cart) => {
+  try {
+    localStorage.setItem(storageKeyFor(uid), JSON.stringify(cart || []));
+  } catch (e) {
+    console.error('saveCartForUid error', e);
+  }
+  };
+
+  const loadCartForUid = (uid) => {
+  try {
+    const s = localStorage.getItem(storageKeyFor(uid));
+    return s ? JSON.parse(s) : [];
+  } catch (e) {
+    console.error('loadCartForUid error', e);
+    return [];
+  }
   };
 
   // Agregar producto al carrito (añade cantidad si ya existe)
@@ -195,11 +335,85 @@ function App() {
   };
 
   // Stubs que tu UI espera (si no están definidos en otro lado)
-  const handleRegistroSubmit = (e) => {
-    e.preventDefault();
-    // tu lógica de registro real debería ir aquí
+  // Reemplazar el stub existente por esta versión para crear cuenta y enviar enlace de verificación
+const handleRegistroSubmit = async (e) => {
+  e.preventDefault();
+
+  try {
+    // Tomar datos del form (tu formulario en el paso 1)
+    const form = e.target;
+    // FormData para leer inputs con name (y querySelector para el password que no tiene name)
+    const fd = new FormData(form);
+    const email = fd.get('email') && String(fd.get('email')).trim();
+    const nombre = (form.querySelector('input[placeholder="Tu nombre completo"]')?.value || '').trim();
+    const telefono = fd.get('telefono') && String(fd.get('telefono')).trim();
+    const codigoPais = fd.get('countryCode') || '+58';
+    const password = form.querySelector('input[type="password"]')?.value;
+
+    if (!email || !password) {
+      return alert('Por favor completa correo y contraseña.');
+    }
+
+    setCargando(true);
+
+    // Crear usuario con Firebase Auth
+    const resultado = await createUserWithEmailAndPassword(auth, email, password);
+    const usuario = resultado.user;
+
+    // Opcional: actualizar displayName con nombre (si quieres)
+    try {
+      if (nombre) {
+        // Sólo si quieres: actualizar displayName requiere updateProfile import y llamada.
+        // No lo hago automáticamente para no añadir más imports; déjame saber si quieres que lo haga.
+      }
+    } catch (e) {
+      console.warn('No se pudo actualizar displayName:', e);
+    }
+
+    // Enviar correo de verificación
+    try {
+      await sendEmailVerification(usuario);
+      // Mensaje claro para el usuario
+      alert(`Se ha enviado un enlace de verificación a ${email}. Revisa tu bandeja de entrada (y spam) y confirma tu cuenta antes de iniciar sesión.`);
+      setMensajeStatus(`Enlace de verificación enviado a ${email}`);
+    } catch (e) {
+      console.error('Error enviando email de verificación:', e);
+      alert('Error enviando enlace de verificación: ' + (e.message || e));
+    }
+
+    // Mantener UX: avanzar paso de registro o mostrar pantalla de verificación
     setPasoRegistro(2);
-  };
+  } catch (err) {
+    console.error('Error en registro:', err);
+    if (err.code === 'auth/email-already-in-use') {
+      alert('Este correo ya está en uso. Intenta iniciar sesión o usar otro correo.');
+    } else if (err.code === 'auth/invalid-email') {
+      alert('Correo inválido.');
+    } else if (err.code === 'auth/weak-password') {
+      alert('La contraseña es muy débil. Usa al menos 6 caracteres.');
+    } else {
+      alert('Error registrando: ' + (err.message || err));
+    }
+  } finally {
+    setCargando(false);
+  }
+};
+
+
+  const reEnviarEnlaceVerificacion = async () => {
+  try {
+    const user = auth && auth.currentUser;
+    if (!user) {
+      return alert('No se detectó usuario activo. Por favor vuelve a registrarte o inicia sesión para reenviar el enlace.');
+    }
+    await sendEmailVerification(user);
+    alert(`Se ha reenviado el enlace de verificación a ${user.email}. Revisa tu bandeja de entrada o spam.`);
+    setMensajeStatus(`Enlace reenviado a ${user.email}`);
+  } catch (err) {
+    console.error('Error reenviando enlace de verificación:', err);
+    alert('No se pudo reenviar el enlace: ' + (err.message || err));
+  }
+};
 
   const enviarCodigo = (metodo) => {
     setMetodoEnvio(metodo);
@@ -219,6 +433,46 @@ function App() {
     const id = setTimeout(() => setTimer(t => t - 1), 1000);
     return () => clearTimeout(id);
   }, [timerActivo, timer]);
+
+
+  // Detecta el enlace "CONTACTO" en la landing y le asigna handler para abrir el modal
+useEffect(() => {
+  // handler que abrira el modal
+  const handler = (e) => {
+    e.preventDefault();
+    setMostrarContacto(true);
+  };
+
+  // Espera un tick para que el DOM esté montado si se carga condicionalmente
+  const timerId = setTimeout(() => {
+    try {
+      // Busca todos los enlaces del nav y encuentra el que tenga el texto "CONTACTO"
+      const anchors = Array.from(document.querySelectorAll('nav ul li a'));
+      const contactAnchor = anchors.find(a => a.textContent && a.textContent.trim().toUpperCase() === 'CONTACTO');
+      if (contactAnchor) {
+        contactAnchor.addEventListener('click', handler);
+      }
+    } catch (err) {
+      console.warn('No se pudo enlazar CONTACTO:', err);
+    }
+  }, 50);
+
+  // cleanup: remover listener si existía
+  return () => {
+    clearTimeout(timerId);
+    try {
+      const anchors = Array.from(document.querySelectorAll('nav ul li a'));
+      const contactAnchor = anchors.find(a => a.textContent && a.textContent.trim().toUpperCase() === 'CONTACTO');
+      if (contactAnchor) {
+        contactAnchor.removeEventListener('click', handler);
+      }
+    } catch (err) {
+      // noop
+    }
+  };
+}, [mostrarTienda, esRegistro]); // se re-ejecuta si cambias de vista
+
+
 
   // --------- VALORES DERIVADOS (para arreglar los errores de 'not defined') ----------
   const categoriasUnicas = React.useMemo(() => {
@@ -476,6 +730,42 @@ const handleSubmitPanel = async (e) => {
     guardarCarritoEnLocalStorage(nuevo);
   };
 
+  // --------- FUNCIONES DE SUGERENCIAS ----------
+  const abrirSugerencias = () => setMostrarSugerencias(true);
+  const cerrarSugerencias = () => setMostrarSugerencias(false);
+
+  const guardarSugerenciasEnLocalStorage = (arr) => {
+    setSugerencias(arr);
+    try {
+      localStorage.setItem('sugerencias', JSON.stringify(arr));
+    } catch (e) {
+      console.error('Error guardando sugerencias en localStorage', e);
+    }
+  };
+
+  const enviarSugerencia = (e) => {
+    e.preventDefault();
+    if (!currentUser) return alert('Debes iniciar sesión para enviar sugerencias');
+    if (!nuevoComentario || !nuevoComentario.trim()) return alert('Escribe un comentario');
+
+    const nombreUsuario = currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Usuario');
+
+    const nueva = {
+      id: Date.now().toString(),
+      nombre: nombreUsuario, // solo nombre como solicitaste
+      comentario: nuevoComentario.trim(),
+      calificacion: Number(nuevaCalificacion) || 0,
+      created_at: new Date().toISOString()
+    };
+
+    const nuevaLista = [nueva, ...sugerencias];
+    guardarSugerenciasEnLocalStorage(nuevaLista);
+
+    setNuevoComentario('');
+    setNuevaCalificacion(5);
+  };
+  // --------------------------------------------
+
   // --- VISTA DE LOGIN (ESTILO PROGRAMA PREMIUM) ---
   if (esLogin) {
     return (
@@ -591,6 +881,7 @@ const handleSubmitPanel = async (e) => {
         `}</style>
 
         <div className="waves-bg">
+
             <svg className="wave-svg w1" viewBox="0 0 1440 320" preserveAspectRatio="none">
                 <path d="M0,160 C320,300 420,0 720,160 C1020,320 1120,20 1440,160"></path>
                 <path d="M0,180 C320,320 420,20 720,180 C1020,340 1120,40 1440,180"></path>
@@ -605,7 +896,7 @@ const handleSubmitPanel = async (e) => {
                     <ul>
                         <li><a href="#" style={{color:'#e2ff00', borderBottom: '2px solid #e2ff00'}}>INICIO</a></li>
                         <li><a href="#">SERVICIOS</a></li>
-                        <li><a href="#">SUGERENCIAS</a></li>
+                        {/*<li><a href="#">SUGERENCIAS</a></li>*/}
                         <li><a href="#">CONTACTO</a></li>
                         <li><a href="#" onClick={(e) => { e.preventDefault(); setEsLogin(true); }}>INICIAR SESIÓN</a></li>
                     </ul>
@@ -636,6 +927,144 @@ const handleSubmitPanel = async (e) => {
                 </div>
             </main>
         </div>
+        {/* --- MODAL CONTACTO (pegar dentro del return de la LANDING: if (!mostrarTienda && !esRegistro) {...}) --- */}
+{mostrarContacto && (
+  <div
+    style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 2000,
+      padding: 20
+    }}
+    onClick={() => setMostrarContacto(false)}
+    role="dialog"
+    aria-modal="true"
+    aria-label="Contacto WhatsApp"
+  >
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: '100%',
+        maxWidth: 420,
+        background: '#0b1220',
+        borderRadius: 16,
+        padding: 20,
+        border: '1px solid rgba(255,255,255,0.06)',
+        color: '#e6eef8',
+        textAlign: 'center'
+      }}
+    >
+      <h2 style={{ marginTop: 0, marginBottom: 8 }}>Contactos</h2>
+      <p style={{ color: '#94a3b8', marginBottom: 16 }}>Selecciona a quién contactar por WhatsApp</p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+        <button
+          onClick={() => {
+            // vendedor +58 4126553503 -> wa.me/584126553503
+            window.open('https://wa.me/584126553503', '_blank', 'noopener');
+          }}
+          style={{ padding: '12px 14px', borderRadius: 12, border: 'none', background: '#06b6d4', color: '#001219', fontWeight: 800, cursor: 'pointer' }}
+        >
+          Vendedor • +58 412 655 3503
+        </button>
+
+        <button
+          onClick={() => {
+            // programador +58 4246322487 -> wa.me/584246322487
+            window.open('https://wa.me/584246322487', '_blank', 'noopener');
+          }}
+          style={{ padding: '12px 14px', borderRadius: 12, border: 'none', background: '#25D366', color: '#001219', fontWeight: 800, cursor: 'pointer' }}
+        >
+          Programador • +58 424 632 2487
+        </button>
+      </div>
+
+      <button
+        onClick={() => setMostrarContacto(false)}
+        style={{ marginTop: 6, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', color: '#e6eef8', cursor: 'pointer' }}
+      >
+        Cerrar
+      </button>
+    </div>
+  </div>
+
+  )}
+  {/* --- fin modal contacto --- */}
+
+
+
+
+         {/* --- PANEL SERVICIOS (nuevo) --- */}
+{mostrarServiciosPanel && (
+  <div
+    style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 2100,
+      padding: 20
+    }}
+    onClick={() => setMostrarServiciosPanel(false)}
+    role="dialog"
+    aria-modal="true"
+    aria-label="Cómo funcionaría en VibeMarket"
+  >
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: '100%',
+        maxWidth: 640,
+        background: '#0b1220',
+        borderRadius: 12,
+        padding: 22,
+        border: '1px solid rgba(255,255,255,0.06)',
+        color: '#e6eef8',
+        textAlign: 'left',
+        lineHeight: 1.4
+      }}
+    >
+      <h2 style={{ marginTop: 0, marginBottom: 8 }}>¿Cómo funcionaría en tu vibemarket?</h2>
+
+      <ol style={{ marginLeft: 18, marginBottom: 12 }}>
+        <li style={{ marginBottom: 8 }}>
+          <strong>seleccion de intereses:</strong> el usuario elije su producto y es se almacena en el carrito de compras.
+        </li>
+        <li style={{ marginBottom: 8 }}>
+          <strong>administracion:</strong> al darle click en el carrito podrás ver la cantidad de productos que llevas incluyendo el monto y podrás eliminar los productos que no quieras comprar.
+        </li>
+        <li style={{ marginBottom: 8 }}>
+          <strong>registro:</strong> solo los usuarios registrados podrán iniciar sesión a la página de lo contrario no podrán entrar ni comprar ni sugerir.
+        </li>
+      </ol>
+
+      <p style={{ marginBottom: 16 }}>Espero le guste mucho nuestra tienda web ☺️☺️☺️</p>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          onClick={() => { setMostrarServiciosPanel(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+          style={{ background: '#d4ff00', color: '#000', border: 'none', padding: '10px 14px', borderRadius: 10, fontWeight: 800, cursor: 'pointer' }}
+        >
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+{/* --- fin PANEL SERVICIOS --- */}
+
+               
+
+
+
+
+           
       </div>
     );
   }
@@ -696,7 +1125,7 @@ const handleSubmitPanel = async (e) => {
                   <p className="intro-text">Utiliza las siguientes vías de contacto,<br/>o rellena el formulario de registro.</p>
                   <div className="contact-item">
                     <span className="label-title"><i className="fa-solid fa-envelope"></i> Vía Gmail</span>
-                    <a href="mailto:vibe.market.x0@gmail.com" className="contact-link">vibe.market.x0@gmail.com</a>
+                    <a href="mailto:marketvibe4@gmail.com" className="contact-link">marketvibe4@gmail.com</a>
                   </div>
                   <div className="contact-item">
                     <span className="label-title"><i className="fa-brands fa-whatsapp"></i> Whatsapp</span>
@@ -719,27 +1148,43 @@ const handleSubmitPanel = async (e) => {
             </>
           )}
           {pasoRegistro === 2 && (
-            <div className="fade-in">
-              <header className="reg-header">
-                <h1 className="reg-h1">Verificación</h1>
-                <p className="reg-desc">Selecciona dónde quieres recibir el código de seguridad.</p>
-              </header>
-              <div className="verify-box">
-                <div className="verify-options">
-                  <button className={`option-btn ${metodoEnvio === 'correo' ? 'active' : ''}`} onClick={() => enviarCodigo('correo')}><i className="fa-solid fa-envelope"></i> Gmail</button>
-                  <button className={`option-btn ${metodoEnvio === 'telefono' ? 'active' : ''}`} onClick={() => enviarCodigo('telefono')}><i className="fa-solid fa-mobile-screen"></i> Teléfono</button>
-                </div>
-                <p style={{color: '#d4ff00', fontWeight: 'bold', marginBottom: '20px', minHeight: '20px', fontSize: '0.9rem'}}>{mensajeStatus}</p>
-                <div className="input-group"><input type="text" className="reg-input code-input-style" placeholder="------" maxLength="6" /></div>
-                <div className="btn-container" style={{justifyContent: 'center'}}><button type="button" className="reg-btn" onClick={() => alert('Validando código...')}>VALIDAR</button></div>
-                <div className="timer-area">
-                  {timerActivo ? (<span>Reenviar código en 00:{timer < 10 ? `0${timer}` : timer}</span>) : (
-                    <span className={`resend-link ${metodoEnvio ? 'active' : ''}`} onClick={metodoEnvio ? () => setTimer(60) : undefined}>Reenviar código ahora</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+  <div className="fade-in">
+    <header className="reg-header">
+      <h1 className="reg-h1">Verificación</h1>
+      <p className="reg-desc">Hemos enviado un enlace de verificación a tu correo. Haz clic en él para confirmar tu cuenta.</p>
+    </header>
+
+    <div className="verify-box">
+      <p style={{color: '#d4ff00', fontWeight: 'bold', marginBottom: '20px', minHeight: '20px', fontSize: '0.95rem'}}>
+        {mensajeStatus || 'Revisa tu correo (y la carpeta de spam) para confirmar tu cuenta.'}
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+        <button
+          type="button"
+          className="reg-btn"
+          onClick={reEnviarEnlaceVerificacion}
+          style={{ width: '100%', maxWidth: 320, padding: '14px 20px' }}
+        >
+          Reenviar enlace de verificación
+        </button>
+
+        <button
+          type="button"
+          className="reg-btn"
+          onClick={() => { setEsRegistro(false); }}
+          style={{ width: '100%', maxWidth: 320, padding: '12px 20px', background: 'transparent', color: '#d4ff00', border: '1px solid #333' }}
+        >
+          Volver al inicio
+        </button>
+      </div>
+
+      <div style={{ marginTop: 22, color: '#94a3b8', fontSize: 0.95 + 'rem', textAlign: 'center' }}>
+        Si no recibiste el correo, espera unos minutos o usa "Reenviar enlace de verificación".
+      </div>
+    </div>
+  </div>
+)}
           <footer className="reg-footer"><p>Vibemarket — Agencia Creativa | Política de Privacidad</p></footer>
         </div>
       </div>
@@ -908,6 +1353,17 @@ return (
               Salir admin
             </button>
           </div>
+        )}
+
+        {/* NUEVO: Botón Sugerencias — aparece solo dentro de la tienda y solo para usuarios autenticados */}
+        {currentUser && (
+          <button
+            onClick={abrirSugerencias}
+            style={{ background: '#fde047', color: '#08111a', border: 'none', padding: '8px 12px', borderRadius: 12, cursor: 'pointer', fontWeight: 800 }}
+            title="Abrir sugerencias"
+          >
+            Sugerencias
+          </button>
         )}
       </div>
     </nav>
@@ -1103,6 +1559,72 @@ return (
               <button className="carrito-btn secondary" onClick={() => { setMostrarCarritoPanel(false); }}>Seguir comprando</button>
               <button className="carrito-btn" onClick={() => { enviarWhatsApp(); setMostrarCarritoPanel(false); }}>Pedir por WhatsApp</button>
             </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Panel de SUGERENCIAS (nuevo) */}
+    {mostrarSugerencias && (
+      <div className="panel-overlay" role="dialog" aria-modal="true" onClick={cerrarSugerencias}>
+        <div className="panel-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
+          <div className="panel-header">
+            <div className="panel-title">Sugerencias y opiniones</div>
+            <div>
+              <button onClick={cerrarSugerencias} className="panel-btn panel-secondary" style={{ padding: '6px 10px' }}>Cerrar</button>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <p style={{ color: '#9aa4b8' }}>Aquí puedes leer lo que otros usuarios opinan y dejar tu comentario o calificación sobre VibeMarket. Solo se muestra el nombre del usuario registrado (no su correo completo).</p>
+          </div>
+
+          {/* Formulario para enviar sugerencia (visible solo si el usuario está autenticado) */}
+          <form onSubmit={enviarSugerencia} style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <textarea
+                className="panel-input panel-textarea full"
+                placeholder={currentUser ? "Escribe tu sugerencia, opinión o comentario..." : "Inicia sesión para escribir una sugerencia"}
+                value={nuevoComentario}
+                onChange={(e) => setNuevoComentario(e.target.value)}
+                disabled={!currentUser}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <label style={{ color: '#9aa4b8' }}>Calificación:</label>
+                <select className="panel-input" value={nuevaCalificacion} onChange={(e) => setNuevaCalificacion(Number(e.target.value))} style={{ width: 120 }}>
+                  <option value={5}>5 ⭐</option>
+                  <option value={4}>4 ⭐</option>
+                  <option value={3}>3 ⭐</option>
+                  <option value={2}>2 ⭐</option>
+                  <option value={1}>1 ⭐</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="panel-btn panel-secondary" onClick={() => { setNuevoComentario(''); setNuevaCalificacion(5); }} style={{ padding: '8px 10px' }}>Limpiar</button>
+                <button type="submit" className="panel-btn" disabled={!currentUser} style={{ padding: '8px 12px' }}>{currentUser ? 'Enviar' : 'Iniciar sesión'}</button>
+              </div>
+            </div>
+          </form>
+
+          <hr style={{ borderColor: 'rgba(255,255,255,0.04)', margin: '12px 0' }} />
+
+          <div style={{ maxHeight: 300, overflow: 'auto' }}>
+            {sugerencias.length === 0 && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 12 }}>Aún no hay sugerencias. Sé el primero en opinar.</div>}
+
+            {sugerencias.map(s => (
+              <div key={s.id} style={{ padding: 12, borderRadius: 10, marginBottom: 8, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.02)' }}>
+                {/* Solo mostramos el nombre del usuario, tal y como solicitaste */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ fontWeight: 800 }}>{s.nombre}</div>
+                  <div style={{ color: '#94a3b8' }}>{s.calificacion} ⭐</div>
+                </div>
+                <div style={{ color: '#cbd5e1' }}>{s.comentario}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
