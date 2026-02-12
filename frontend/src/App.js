@@ -16,6 +16,8 @@ import {
 import celularImg from './celular-mockup.png';
 import logoImg from './logo-circular.png';
 
+import useTotalWasm from './hooks/useTotalWasm';
+
 function App() {
   const auth = getAuth(); // Inicializamos Firebase Auth
 
@@ -58,12 +60,125 @@ function App() {
   // Mantener una referencia al usuario actual de Firebase (si está autenticado)
   const [currentUser, setCurrentUser] = useState(null);
 
+  const [mostrarPasswordLogin, setMostrarPasswordLogin] = useState(false);
+  // Agrega state arriba del return (junto a los otros useState)
+  const [mostrarPasswordRegistro, setMostrarPasswordRegistro] = useState(false);
+
+
   // ------------------------------------------------------------
 
   // Agregar cerca de los otros useState (por ejemplo justo después de mostrarCarritoPanel)
   const [mostrarContacto, setMostrarContacto] = useState(false);
   // Nuevo estado para el panel de SERVICIOS
   const [mostrarServiciosPanel, setMostrarServiciosPanel] = useState(false);
+
+
+  const [mostrarMenuCategorias, setMostrarMenuCategorias] = useState(false);
+  const [nuevaCategoriaInput, setNuevaCategoriaInput] = useState("");
+  const [agregandoCategoria, setAgregandoCategoria] = useState(false);
+
+  const [metodoPago, setMetodoPago] = useState(""); // "whatsapp" o "pagomovil  mount"
+  const [showPagoMovilPanel, setShowPagoMovilPanel] = useState(false);
+  const [pagomovilData, setPagomovilData] = useState({ telefono: "", rif: "" });
+  
+  const [pagomovilWaiting, setPagomovilWaiting] = useState(false);
+  const [pagomovilSuccess, setPagomovilSuccess] = useState(null);
+  const [pagomovilFacturaId, setPagomovilFacturaId] = useState(null);
+
+
+
+  const LOCAL_STORAGE_KEY_CATEGORIAS = "vibemarket_categorias_extras";
+  const [categoriasExtra, setCategoriasExtra] = useState([]);
+
+  const CATEGORIAS_PREDEFINIDAS = [
+  "Audifonos de Consumo",
+  "Deportivas",
+  "Pcs - Equipo Alta Gama",
+  "Entrada de Audio",
+  "Mouse - Perifericos",
+  "Luces Led",
+  "mouse Pad",
+  "Proteinas",
+  "Dedales Tact"
+  ];
+  
+
+
+  // Hook WASM
+const { calcularConWasm, loaded: wasmLoaded } = useTotalWasm();
+const [totalWasm, setTotalWasm] = useState(null);
+
+// fallback JS (en caso de que WASM no cargue aún)
+const calcularTotalJS = (carrito) => {
+  if (!Array.isArray(carrito) || carrito.length === 0) return 0.0;
+  return carrito.reduce((acc, it) => {
+    const precio = Number(it.precio) || 0;
+    const cantidad = Number(it.cantidad) > 0 ? Number(it.cantidad) : 1;
+    return acc + precio * cantidad;
+  }, 0);
+};
+
+
+//const categoriasVibe
+
+// recalcular total cuando cambie carrito (intenta usar WASM, sino JS)
+useEffect(() => {
+  let mounted = true;
+  (async () => {
+    try {
+      if (wasmLoaded && calcularConWasm) {
+        const precios = carrito.map(it => Number(it.precio) || 0);
+        const cantidades = carrito.map(it => Number(it.cantidad) || 1);
+        const t = await calcularConWasm(precios, cantidades);
+        if (!mounted) return;
+        setTotalWasm(t);
+      } else {
+        if (!mounted) return;
+        setTotalWasm(calcularTotalJS(carrito));
+      }
+    } catch (err) {
+      console.error('Error WASM -> fallback JS:', err);
+      if (mounted) setTotalWasm(calcularTotalJS(carrito));
+    }
+  })();
+  return () => { mounted = false; };
+}, [carrito, wasmLoaded, calcularConWasm]);
+
+// donde antes usabas totalDinero, ahora usa displayTotal:
+const totalJS = calcularTotalJS(carrito);
+
+
+
+const displayTotal = (typeof totalWasm === 'number' && !Number.isNaN(totalWasm)) ? totalWasm : totalJS;
+  // El estado que depende de displayTotal.
+  const [pagomovilForm, setPagomovilForm] = useState({
+    nombre: '',
+    cedula: '',
+    telefono: '',
+    referencia: '',
+    monto: displayTotal
+  });
+
+
+useEffect(() => {
+  const socket = require("socket.io-client")("http://localhost:4000");
+  socket.on("pagomovil-success", data => {
+    setPagomovilWaiting(false);
+    setPagomovilSuccess(data);
+    setPagomovilFacturaId(data.facturaId);
+  });
+  return () => socket.disconnect();
+}, []);
+
+
+const fetchPagoMovilData = async () => {
+  const res = await axios.get("http://localhost:4000/api/pagomovil-data");
+  setPagomovilData(res.data);
+};
+
+
+
+
 
   // Efecto que enlaza el enlace "SERVICIOS" en la landing para abrir el panel
 
@@ -73,6 +188,17 @@ function App() {
     e.preventDefault();
     setMostrarServiciosPanel(true);
     };
+
+
+
+
+    
+
+
+   
+
+
+
 
     // Espera un tick para que el DOM esté montado
   const timerId = setTimeout(() => {
@@ -115,8 +241,8 @@ function App() {
   const manejarLogin = async (e) => {
     e.preventDefault();
     setCargando(true);
-    try {
-      // Intento de inicio de sesión con Firebase
+    try {  
+      // Intento de inicio de sesión con Firebase    const calcularTot
       await signInWithEmailAndPassword(auth, loginData.email, loginData.password);
       
       // Actualizar usuario actual localmente (auth.currentUser suele contener al usuario)
@@ -400,6 +526,25 @@ const handleRegistroSubmit = async (e) => {
 };
 
 
+
+
+const handlePagoMovilSubmit = async (e) => {
+  e.preventDefault();
+  setPagomovilWaiting(true);
+  await axios.post("http://localhost:4000/api/pagomovil-confirm", {
+    ...pagomovilForm,
+    monto: displayTotal // Total de tu compra
+  });
+};
+
+
+
+
+
+
+
+
+
   const reEnviarEnlaceVerificacion = async () => {
   try {
     const user = auth && auth.currentUser;
@@ -473,7 +618,7 @@ useEffect(() => {
 }, [mostrarTienda, esRegistro]); // se re-ejecuta si cambias de vista
 
 
-
+  const categoriasVibe = [...CATEGORIAS_PREDEFINIDAS, ...categoriasExtra];
   // --------- VALORES DERIVADOS (para arreglar los errores de 'not defined') ----------
   const categoriasUnicas = React.useMemo(() => {
     const setCats = new Set((productos || []).map(p => (p.categoria || 'Otros')));
@@ -489,8 +634,26 @@ useEffect(() => {
     });
   }, [productos, filtroCategoria, busqueda]);
 
+  // Declarar categorías base y extras
+  
+ 
+  
+
+
+  useEffect(() => {
+  try {
+    const ex = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY_CATEGORIAS) || "[]");
+    if (Array.isArray(ex)) setCategoriasExtra(ex);
+  } catch (e) {
+    // nada
+  }
+  }, []);
+
+  //handlers
+
+
   const totalItems = carrito.reduce((s, it) => s + (it.cantidad || 1), 0);
-  const totalDinero = carrito.reduce((s, it) => s + (Number(it.precio) * (it.cantidad || 1)), 0);
+ 
 
   // --- NUEVA LÓGICA: seleccionar imagen desde dispositivo ---
   // ref para el input file oculto
@@ -684,6 +847,10 @@ const handleSubmitPanel = async (e) => {
       categoria
     };
 
+    if (nuevoProducto.categoria === "custom" && nuevoProducto.categoriaPersonalizada) {
+      agregarCategoriaExtra(nuevoProducto.categoriaPersonalizada);
+    }
+
     // DEBUG: ver payload antes de enviar
     console.log('Payload JSON a enviar:', payload);
 
@@ -712,7 +879,33 @@ const handleSubmitPanel = async (e) => {
       alert('Error publicando producto: ' + err.message);
     }
   }
-};
+  };
+
+
+  const handleSeleccionarCategoria = (cat) => {
+  setFiltroCategoria(cat);
+  setMostrarMenuCategorias(false); // opcional: cierras el menú
+  };
+
+   
+
+  const agregarCategoriaExtra = nuevaCat => {
+  if (
+    !nuevaCat ||
+    CATEGORIAS_PREDEFINIDAS.includes(nuevaCat) ||
+    categoriasExtra.includes(nuevaCat)
+  ) return;
+  const nuevas = [...categoriasExtra, nuevaCat];
+  setCategoriasExtra(nuevas);
+  localStorage.setItem(LOCAL_STORAGE_KEY_CATEGORIAS, JSON.stringify(nuevas));
+  };
+
+
+
+
+
+
+
 
   // --------- FIN AÑADIDOS PARA PANEL ----------
 
@@ -790,36 +983,59 @@ const handleSubmitPanel = async (e) => {
           <button className="back-home" onClick={() => setEsLogin(false)}>← Volver al inicio</button>
           <h1 className="login-h1">Bienvenido</h1>
           <p className="login-p">Ingresa tus credenciales para acceder a la tienda.</p>
-          
-          <form onSubmit={manejarLogin}>
-            <div className="input-wrapper">
-              <i className="fa-solid fa-envelope input-icon"></i>
-              <input 
-                type="email" 
-                className="login-input" 
-                placeholder="Correo electrónico" 
-                required 
-                value={loginData.email}
-                onChange={(e) => setLoginData({...loginData, email: e.target.value})}
-              />
-            </div>
-            
-            <div className="input-wrapper">
-              <i className="fa-solid fa-lock input-icon"></i>
-              <input 
-                type="password" 
-                className="login-input" 
-                placeholder="Contraseña" 
-                required 
-                value={loginData.password}
-                onChange={(e) => setLoginData({...loginData, password: e.target.value})}
-              />
-            </div>
+          <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 
-            <button type="submit" className="btn-entrar" disabled={cargando}>
-              {cargando ? 'VALIDANDO...' : 'INICIAR SESIÓN'}
-            </button>
-          </form>
+
+
+          <form onSubmit={manejarLogin}>
+  <div className="input-wrapper">
+    <i className="fa-solid fa-envelope input-icon"></i>
+    <input 
+      type="email" 
+      className="login-input" 
+      placeholder="Correo electrónico" 
+      required 
+      value={loginData.email}
+      onChange={(e) => setLoginData({...loginData, email: e.target.value})}
+    />
+  </div>
+  
+  <div className="input-wrapper" style={{ position: 'relative' }}>
+    <i className="fa-solid fa-lock input-icon"></i>
+    <input 
+      type={mostrarPasswordLogin ? "text" : "password"}
+      className="login-input" 
+      placeholder="Contraseña" 
+      required 
+      value={loginData.password}
+      onChange={(e) => setLoginData({...loginData, password: e.target.value})}
+      style={{ paddingRight: 50 }}
+      autoComplete="current-password"
+    />
+    <span
+      onClick={() => setMostrarPasswordLogin(v => !v)}
+      style={{
+        position: "absolute",
+        right: 18,
+        top: "50%",
+        transform: "translateY(-50%)",
+        cursor: "pointer",
+        color: "#888",
+        fontSize: 18
+      }}
+      role="button"
+      aria-label={mostrarPasswordLogin ? "Ocultar contraseña" : "Mostrar contraseña"}
+      tabIndex={0}
+    >
+      <i className={`fa-solid ${mostrarPasswordLogin ? "fa-eye-slash" : "fa-eye"}`}></i>
+    </span>
+  </div>
+  <button type="submit" className="btn-entrar" disabled={cargando}>
+    {cargando ? 'VALIDANDO...' : 'INICIAR SESIÓN'}
+  </button>
+</form>
+          
+   
 
           <span className="forgot-link" onClick={recuperarContrasena}>
             ¿Olvidaste la contraseña?
@@ -1141,7 +1357,32 @@ const handleSubmitPanel = async (e) => {
                     </select>
                     <input type="tel" name="telefono" className="reg-input" placeholder="Número telefónico" required />
                   </div>
-                  <div className="input-group"><input type="password" className="reg-input" placeholder="Contraseña" required /></div>
+                  <div className="input-group" style={{ position: "relative" }}>
+                    <input 
+                    type={mostrarPasswordRegistro ? "text" : "password"} 
+                    className="reg-input" 
+                    placeholder="Contraseña" 
+                    required 
+                    style={{ paddingRight: 50 }} // espacio para el icono
+                    />
+                    <span
+                    onClick={() => setMostrarPasswordRegistro(v => !v)}
+                    style={{
+                      position: "absolute",
+                      right: 18,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      cursor: "pointer",
+                      color: "#888",
+                      fontSize: 18
+                      }}
+                      role="button"
+                      aria-label={mostrarPasswordRegistro ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      tabIndex={0}
+                      >
+                        <i className={`fa-solid ${mostrarPasswordRegistro ? "fa-eye-slash" : "fa-eye"}`}></i>
+                       </span>
+                       </div>
                   <div className="btn-container"><button type="submit" className="reg-btn">SIGUIENTE</button></div>
                 </form>
               </div>
@@ -1355,6 +1596,76 @@ return (
           </div>
         )}
 
+        <div style={{ position: "relative", marginRight: 20 }}>
+  <button
+    onClick={() => setMostrarMenuCategorias(v => !v)}
+    style={{
+      background: '#d4ff00',
+      color: '#000',
+      border: 'none',
+      padding: '10px 22px',
+      borderRadius: '14px',
+      fontWeight: 800,
+      cursor: 'pointer',
+      fontSize: '1rem'
+    }}
+    title="Elegir Categoría"
+  >
+    Categorías <i className="fa-solid fa-angle-down"></i>
+  </button>
+  {mostrarMenuCategorias && (
+    <div style={{
+      position: "absolute",
+      top: "110%",
+      left: 0,
+      background: "#181e2f",
+      border: "1px solid #d4ff00",
+      borderRadius: 12,
+      zIndex: 20,
+      minWidth: 200,
+      boxShadow: "0 4px 18px rgba(30,41,59,0.2)",
+      padding: "6px 0"
+    }}>
+      {/* Opción: todos */}
+      <button
+        style={{
+          width: "100%",
+          background: "none",
+          border: "none",
+          color: filtroCategoria === "Todos" ? "#d4ff00" : "#fff",
+          padding: "12px 20px",
+          textAlign: "left",
+          fontWeight: 700,
+          cursor: "pointer"
+        }}
+        onClick={() => handleSeleccionarCategoria("Todos")}
+      >
+        Todos
+      </button>
+      {categoriasUnicas
+        .filter(cat => cat !== "Todos")
+        .map(cat => (
+          <button
+            key={cat}
+            style={{
+              width: "100%",
+              background: "none",
+              border: "none",
+              color: filtroCategoria === cat ? "#d4ff00" : "#fff",
+              padding: "12px 20px",
+              textAlign: "left",
+              cursor: "pointer",
+              fontWeight: 500
+            }}
+            onClick={() => handleSeleccionarCategoria(cat)}
+          >
+            {cat}
+          </button>
+      ))}
+    </div>
+  )}
+</div>
+
         {/* NUEVO: Botón Sugerencias — aparece solo dentro de la tienda y solo para usuarios autenticados */}
         {currentUser && (
           <button
@@ -1438,12 +1749,69 @@ return (
                 required
               />
 
-              <input
-                className="panel-input"
-                placeholder="Categoría"
-                value={nuevoProducto.categoria}
-                onChange={(e) => handleNuevoProductoChange('categoria', e.target.value)}
-              />
+              {/* Selector de categoría categorias */}
+<div className="full" style={{ marginBottom: 8 }}>
+  {!agregandoCategoria ? (
+    <>
+      <select
+        className="panel-input"
+        value={nuevoProducto.categoria}
+        onChange={e => {
+          const val = e.target.value;
+          if (val === "__AGREGAR__") {
+            setAgregandoCategoria(true);
+            setNuevaCategoriaInput("");
+          } else {
+            handleNuevoProductoChange('categoria', val);
+          }
+        }}
+        required
+      >
+        <option value="">Elegir categoría</option>
+        {[...CATEGORIAS_PREDEFINIDAS, ...categoriasExtra].map(cat =>
+          <option key={cat} value={cat}>{cat}</option>
+        )}
+        <option value="__AGREGAR__">➕ Agregar nueva categoría...</option>
+      </select>
+    </>
+  ) : (
+    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <input
+        className="panel-input"
+        placeholder="Nombre nueva categoría"
+        value={nuevaCategoriaInput}
+        onChange={e => setNuevaCategoriaInput(e.target.value)}
+        autoFocus
+      />
+      <button
+        type="button"
+        className="panel-btn"
+        style={{ padding: "10px 14px", background: "#d4ff00", color: "#08111a" }}
+        disabled={!nuevaCategoriaInput.trim()}
+        onClick={() => {
+          const nueva = nuevaCategoriaInput.trim();
+          if (
+            !nueva ||
+            CATEGORIAS_PREDEFINIDAS.includes(nueva) ||
+            categoriasExtra.includes(nueva)
+          ) {
+            alert('La categoría ya existe o es inválida.');
+            return;
+          }
+          setCategoriasExtra([...categoriasExtra, nueva]);
+          localStorage.setItem(LOCAL_STORAGE_KEY_CATEGORIAS, JSON.stringify([...categoriasExtra, nueva]));
+          handleNuevoProductoChange('categoria', nueva);
+          setAgregandoCategoria(false);
+        }}
+      >Agregar</button>
+      <button
+        type="button"
+        className="panel-btn panel-secondary"
+        onClick={() => setAgregandoCategoria(false)}
+      >Cancelar</button>
+    </div>
+  )}
+</div>
 
               <input
                 className="panel-input"
@@ -1553,13 +1921,63 @@ return (
             ))}
           </div>
 
-          <div className="carrito-footer">
-            <div className="total-price">Total: ${totalDinero.toFixed(2)}</div>
-            <div className="carrito-actions">
-              <button className="carrito-btn secondary" onClick={() => { setMostrarCarritoPanel(false); }}>Seguir comprando</button>
-              <button className="carrito-btn" onClick={() => { enviarWhatsApp(); setMostrarCarritoPanel(false); }}>Pedir por WhatsApp</button>
-            </div>
-          </div>
+         <div className="carrito-footer">
+  {/* Selección método de pago */}
+  {!metodoPago && (
+    <div style={{ display: "flex", gap: 16 }}>
+      <button onClick={() => setMetodoPago("whatsapp")} className="carrito-btn">Pagar por WhatsApp</button>
+      <button onClick={() => { setMetodoPago("pagomovil"); fetchPagoMovilData(); setShowPagoMovilPanel(true); }} className="carrito-btn">Pago Móvil C2P</button>
+    </div>
+  )}
+
+  {/* Panel Pago WhatsApp */}
+  {metodoPago === "whatsapp" && (
+    <button className="carrito-btn" onClick={() => { enviarWhatsApp(); setMostrarCarritoPanel(false); }}>Enviar pedido por WhatsApp</button>
+  )}
+
+  {/* Panel Pago Móvil C2P */}
+  {metodoPago === "pagomovil" && showPagoMovilPanel && (
+    <div style={{ background: "#1e293b", padding: 24, borderRadius: 16 }}>
+      <h2>Paga por Pago Móvil C2P</h2>
+      <div>
+        <p><b>Teléfono del comercio:</b> {pagomovilData.telefono}</p>
+        <p><b>RIF:</b> {pagomovilData.rif}</p>
+        <p><b>Total:</b> {displayTotal.toFixed(2)} Bs</p>
+        <form onSubmit={handlePagoMovilSubmit}>
+          <input placeholder="Nombre Completo" required value={pagomovilForm.nombre} onChange={e => setPagomovilForm({ ...pagomovilForm, nombre: e.target.value })} />
+          <input placeholder="Cédula" required value={pagomovilForm.cedula} onChange={e => setPagomovilForm({ ...pagomovilForm, cedula: e.target.value })} />
+          <input placeholder="Teléfono" required value={pagomovilForm.telefono} onChange={e => setPagomovilForm({ ...pagomovilForm, telefono: e.target.value })} />
+          <input placeholder="Referencia del pago" required value={pagomovilForm.referencia} onChange={e => setPagomovilForm({ ...pagomovilForm, referencia: e.target.value })} />
+          <button type="submit" className="carrito-btn">Confirmar Pago</button>
+        </form>
+      </div>
+    </div>
+  )}
+
+  {/* Espera cargando */}
+  {pagomovilWaiting && (
+    <div style={{ background: "#0b1220", color: "#d4ff00", textAlign: "center", padding: 32, borderRadius: 16 }}>
+      <div className="spinner" style={{ margin: "20px auto" }}>
+        <i className="fa-solid fa-spinner fa-spin fa-2x"></i>
+      </div>
+      <h2>Estamos validando tu pago con el banco, por favor no cierres esta ventana</h2>
+    </div>
+  )}
+
+  {/* Mensaje de éxito */}
+  {pagomovilSuccess && (
+    <div style={{ background: "#d4ff00", color: "#08111a", textAlign: "center", padding: 32, borderRadius: 16 }}>
+      <h2>¡Pago Exitoso!</h2>
+      <p>Referencia: {pagomovilSuccess.referencia}</p>
+      <button onClick={() => window.open(`http://localhost:4000/api/factura/${pagomovilFacturaId}`)} className="carrito-btn">Descargar Factura PDF</button>
+      <button className="carrito-btn" onClick={() => window.print()}>Imprimir</button>
+    </div>
+  )}
+</div>
+
+        
+
+
         </div>
       </div>
     )}
@@ -1664,7 +2082,7 @@ return (
     {/* Bottom cart summary (si hay items) */}
     {carrito.length > 0 && (
       <div className="bottom-cart" style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '800px', background: 'rgba(30,41,59,0.8)', backdropFilter: 'blur(15px)', padding: '20px', borderRadius: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 500 }}>
-        <h3 style={{ margin: 0 }}>Total: ${totalDinero.toFixed(2)}</h3>
+        <h3 style={{ margin: 0 }}>Total: ${displayTotal.toFixed(2)}</h3>
         <div style={{ display: 'flex', gap: 12 }}>
           <button onClick={() => { setMostrarCarritoPanel(true); }} style={{ background: '#06b6d4', color: '#001219', border: 'none', padding: '10px 14px', borderRadius: '12px', cursor: 'pointer', fontWeight: 800 }}>Ver carrito</button>
           <button onClick={enviarWhatsApp} style={{ background: '#22c55e', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: 700 }}>PEDIR POR WHATSAPP</button>
