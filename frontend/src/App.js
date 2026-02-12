@@ -129,7 +129,14 @@ useEffect(() => {
       if (wasmLoaded && calcularConWasm) {
         const precios = carrito.map(it => Number(it.precio) || 0);
         const cantidades = carrito.map(it => Number(it.cantidad) || 1);
+
+        // LOGS DE DEBUG ↓↓↓
+        console.log("DEBUG PRECIOS:", precios);
+        console.log("DEBUG CANTIDADES:", cantidades);
         const t = await calcularConWasm(precios, cantidades);
+        console.log("DEBUG TOTAL WASM:", t);
+        // LOGS DE DEBUG ↑↑↑
+
         if (!mounted) return;
         setTotalWasm(t);
       } else {
@@ -148,9 +155,10 @@ useEffect(() => {
 const totalJS = calcularTotalJS(carrito);
 
 
-
-const displayTotal = (typeof totalWasm === 'number' && !Number.isNaN(totalWasm)) ? totalWasm : totalJS;
+const displayTotal = totalJS;
+{/*const displayTotal = (typeof totalWasm === 'number' && !Number.isNaN(totalWasm)) ? totalWasm : totalJS;*/}
   // El estado que depende de displayTotal.
+
   const [pagomovilForm, setPagomovilForm] = useState({
     nombre: '',
     cedula: '',
@@ -158,6 +166,10 @@ const displayTotal = (typeof totalWasm === 'number' && !Number.isNaN(totalWasm))
     referencia: '',
     monto: displayTotal
   });
+
+  useEffect(() => {
+  setPagomovilForm(form => ({ ...form, monto: displayTotal }));
+  }, [displayTotal]);
 
 
 useEffect(() => {
@@ -1434,8 +1446,12 @@ const handleSubmitPanel = async (e) => {
 
   // --- VISTA DE TIENDA PREMIUM (GLASSMORPHISM) ---
   // --- VISTA DE TIENDA PREMIUM (ADAPTADA DEL HTML PROPORCIONADO) ---
+  console.log("RENDER displayTotal:", displayTotal);
+  console.log("RENDER carrito:", carrito);
 return (
   <div style={{ backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh', position: 'relative', overflowX: 'hidden' }}>
+    {/*console.log("MOSTRANDO EN UI:", displayTotal);*/}
+    {/*console.log("CARRITO", carrito);*/}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <style>{`
       :root {
@@ -2082,7 +2098,9 @@ return (
     {/* Bottom cart summary (si hay items) */}
     {carrito.length > 0 && (
       <div className="bottom-cart" style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '800px', background: 'rgba(30,41,59,0.8)', backdropFilter: 'blur(15px)', padding: '20px', borderRadius: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 500 }}>
-        <h3 style={{ margin: 0 }}>Total: ${displayTotal.toFixed(2)}</h3>
+        <h3 style={{ margin: 0 }}>Total: $<pre>{displayTotal.toFixed(2)}</pre></h3>
+        {/*<pre>{JSON.stringify(carrito, null, 2)}</pre>*/}
+        {/*<pre>{displayTotal}</pre>*/}
         <div style={{ display: 'flex', gap: 12 }}>
           <button onClick={() => { setMostrarCarritoPanel(true); }} style={{ background: '#06b6d4', color: '#001219', border: 'none', padding: '10px 14px', borderRadius: '12px', cursor: 'pointer', fontWeight: 800 }}>Ver carrito</button>
           <button onClick={enviarWhatsApp} style={{ background: '#22c55e', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: 700 }}>PEDIR POR WHATSAPP</button>

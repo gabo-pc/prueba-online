@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const axios = require('axios');
 
 // ---- NUEVO: Socket.io y PDF ----
 const http = require('http');
@@ -37,13 +38,50 @@ app.get('/api/productos', async (req, res) => {
 });
 
 // 2. CREAR UN PRODUCTO
-app.post('/api/productos', async (req, res) => {
+
+
+app.post('/api/pagomovil-confirm', async (req, res) => {
+    // Mercantil C2P requiere: cedula, telefono, banco (código), monto y OTP
+    const { nombre, cedula, telefono, referencia, monto, otp, bancoCodigo } = req.body;
+
     try {
-        const nuevoProducto = new Producto(req.body);
-        const productoGuardado = await nuevoProducto.save();
-        res.status(201).json(productoGuardado);
+        // Llamada real al API de Mercantil
+        const response = await axios.post('https://api.mercantilbanco.com/v1/pago-movil/c2p', {
+            customer_id: cedula,
+            destination_bank_id: bancoCodigo, // ej: "0105"
+            destination_phone_number: telefono,
+            amount: monto,
+            currency: "VES",
+            payment_reference: referencia,
+            otp: otp // El código que el cliente genera en su app bancaria
+        }, {
+            headers: {
+                'X-IBM-Client-Id': process.env.MERCANTIL_API_KEY,
+                'X-IBM-Client-Secret': process.env.MERCANTIL_API_SECRET,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        // Si el banco responde exitoso
+        const facturaId = Date.now();
+        
+        io.emit('pagomovil-success', {
+            referencia,
+            facturaId,
+            nombre,
+            cedula,
+            monto
+        });
+
+        res.json({ ok: true, referencia, facturaId });
+
     } catch (error) {
-        res.status(400).json({ mensaje: "Error al guardar", error });
+        console.error("Error en pago Mercantil:", error.response?.data || error.message);
+        res.status(400).json({ 
+            ok: false, 
+            mensaje: "Pago rechazado por el banco",
+            detalle: error.response?.data 
+        });
     }
 });
 
