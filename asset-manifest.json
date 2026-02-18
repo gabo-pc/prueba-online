@@ -1,17 +1,18 @@
 {
   "files": {
     "main.css": "/prueba-online/static/css/main.1c1f88ed.css",
-    "main.js": "/prueba-online/static/js/main.3a01f7b2.js",
-    "static/js/453.29633220.chunk.js": "/prueba-online/static/js/453.29633220.chunk.js",
+    "main.js": "/prueba-online/static/js/main.86f47559.js",
+    "static/js/453.20359781.chunk.js": "/prueba-online/static/js/453.20359781.chunk.js",
     "static/media/logo-circular.png": "/prueba-online/static/media/logo-circular.de3acf59928bb5adf9f6.png",
     "static/media/celular-mockup.png": "/prueba-online/static/media/celular-mockup.ed3dfed366588cfcc576.png",
+    "static/media/qr-pago-movil.png": "/prueba-online/static/media/qr-pago-movil.28d8dbe327df06d450b3.png",
     "index.html": "/prueba-online/index.html",
     "main.1c1f88ed.css.map": "/prueba-online/static/css/main.1c1f88ed.css.map",
-    "main.3a01f7b2.js.map": "/prueba-online/static/js/main.3a01f7b2.js.map",
-    "453.29633220.chunk.js.map": "/prueba-online/static/js/453.29633220.chunk.js.map"
+    "main.86f47559.js.map": "/prueba-online/static/js/main.86f47559.js.map",
+    "453.20359781.chunk.js.map": "/prueba-online/static/js/453.20359781.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.1c1f88ed.css",
-    "static/js/main.3a01f7b2.js"
+    "static/js/main.86f47559.js"
   ]
 }

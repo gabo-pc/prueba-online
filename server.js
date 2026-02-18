@@ -130,30 +130,7 @@ app.get('/api/pagomovil-data', (req, res) => {
     });
 });
 
-// 2. Confirmar pago móvil
-app.post('/api/pagomovil-confirm', async (req, res) => {
-    const { nombre, cedula, telefono, referencia, monto } = req.body;
 
-    // Aquí deberías consultar el API de Mercantil para validar pago.
-    // SIMULA un pago exitoso con delay de 4 segundos por demo (puedes conectar el real luego).
-    setTimeout(() => {
-        const facturaId = Date.now();
-
-        io.emit('pagomovil-success', {
-            referencia,
-            facturaId,
-            nombre,
-            cedula,
-            monto
-        });
-
-        res.json({
-            ok: true,
-            referencia: referencia,
-            facturaId
-        });
-    }, 4000);
-});
 
 // 3. Descargar Factura como PDF
 app.get('/api/factura/:id', (req, res) => {

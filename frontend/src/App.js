@@ -15,6 +15,7 @@ import {
 // --- CONFIGURACIÓN DE IMÁGENES ---
 import celularImg from './celular-mockup.png';
 import logoImg from './logo-circular.png';
+import qrPagoMovil from './qr-pago-movil.png';
 
 import useTotalWasm from './hooks/useTotalWasm';
 
@@ -64,6 +65,9 @@ function App() {
   // Agrega state arriba del return (junto a los otros useState)
   const [mostrarPasswordRegistro, setMostrarPasswordRegistro] = useState(false);
 
+  // NUEVO: Estados para métodos de pago
+  const [metodoPago, setMetodoPago] = useState(""); // "whatsapp" | "qr"
+  const [mostrarModalQR, setMostrarModalQR] = useState(false);
 
   // ------------------------------------------------------------
 
@@ -76,16 +80,6 @@ function App() {
   const [mostrarMenuCategorias, setMostrarMenuCategorias] = useState(false);
   const [nuevaCategoriaInput, setNuevaCategoriaInput] = useState("");
   const [agregandoCategoria, setAgregandoCategoria] = useState(false);
-
-  const [metodoPago, setMetodoPago] = useState(""); // "whatsapp" o "pagomovil  mount"
-  const [showPagoMovilPanel, setShowPagoMovilPanel] = useState(false);
-  const [pagomovilData, setPagomovilData] = useState({ telefono: "", rif: "" });
-  
-  const [pagomovilWaiting, setPagomovilWaiting] = useState(false);
-  const [pagomovilSuccess, setPagomovilSuccess] = useState(null);
-  const [pagomovilFacturaId, setPagomovilFacturaId] = useState(null);
-
-
 
   const LOCAL_STORAGE_KEY_CATEGORIAS = "vibemarket_categorias_extras";
   const [categoriasExtra, setCategoriasExtra] = useState([]);
@@ -156,41 +150,39 @@ const totalJS = calcularTotalJS(carrito);
 
 
 const displayTotal = totalJS;
-{/*const displayTotal = (typeof totalWasm === 'number' && !Number.isNaN(totalWasm)) ? totalWasm : totalJS;*/}
-  // El estado que depende de displayTotal.
 
-  const [pagomovilForm, setPagomovilForm] = useState({
-    nombre: '',
-    cedula: '',
-    telefono: '',
-    referencia: '',
-    monto: displayTotal
-  });
+// Al inicio del componente App(), después de todos los useState
 
-  useEffect(() => {
-  setPagomovilForm(form => ({ ...form, monto: displayTotal }));
-  }, [displayTotal]);
-
-
+// 1. Efecto para RESTAURAR la vista guardada al cargar la página
 useEffect(() => {
-  const socket = require("socket.io-client")("http://localhost:4000");
-  socket.on("pagomovil-success", data => {
-    setPagomovilWaiting(false);
-    setPagomovilSuccess(data);
-    setPagomovilFacturaId(data.facturaId);
-  });
-  return () => socket.disconnect();
-}, []);
+  try {
+    const vistaGuardada = localStorage.getItem('vibemarket_vista');
+    if (vistaGuardada === 'tienda') {
+      setMostrarTienda(true);
+      setEsRegistro(false);
+      setEsLogin(false);
+    }
+  } catch (e) {
+    console.warn('No se pudo restaurar la vista:', e);
+  }
+}, []); // Solo al montar
 
+// 2. Efecto para GUARDAR la vista cuando cambie
+useEffect(() => {
+  try {
+    if (mostrarTienda) {
+      localStorage.setItem('vibemarket_vista', 'tienda');
+    } else if (!esRegistro && !esLogin) {
+      // Si estamos en landing (inicio)
+      localStorage.setItem('vibemarket_vista', 'inicio');
+    }
+    // Nota: no guardamos registro/login, esos siempre empiezan desde inicio
+  } catch (e) {
+    console.warn('No se pudo guardar la vista:', e);
+  }
+}, [mostrarTienda, esRegistro, esLogin]);
 
-const fetchPagoMovilData = async () => {
-  const res = await axios.get("http://localhost:4000/api/pagomovil-data");
-  setPagomovilData(res.data);
-};
-
-
-
-
+  // El estado que depende de displayTotal.
 
   // Efecto que enlaza el enlace "SERVICIOS" en la landing para abrir el panel
 
@@ -204,10 +196,8 @@ const fetchPagoMovilData = async () => {
 
 
 
+
     
-
-
-   
 
 
 
@@ -246,7 +236,7 @@ const fetchPagoMovilData = async () => {
 
 
 
-  const API_URL = 'https://prueba-online.onrender.com/api/productos';
+  const API_URL = 'https://prueba-online.onrender.com/api/productos  ';
 
   // --- NUEVAS FUNCIONES DE FIREBASE (LOGIN Y RECUPERACIÓN useEffect) ---
 
@@ -361,7 +351,7 @@ const fetchPagoMovilData = async () => {
     }
   };
 
-  // Guardar carrito en localStorage
+// Guardar carrito en localStorage
   // Reemplaza la función existente guardarCarritoEnLocalStorage por esta
   const guardarCarritoEnLocalStorage = (nuevoCarrito) => {
   // Actualiza el estado React como antes
@@ -457,7 +447,7 @@ const fetchPagoMovilData = async () => {
     const total = carrito.reduce((s, i) => s + Number(i.precio) * (i.cantidad || 1), 0);
     const mensaje = encodeURIComponent(`Hola, quiero hacer un pedido:\n${lines.join('\n')}\n\nTotal: $${total.toFixed(2)}`);
     const telefono = '58' + '4246322487'; // reemplaza por número destino (sin + ni espacios)
-    window.open(`https://wa.me/${telefono}?text=${mensaje}`, '_blank');
+    window.open(`https://wa.me/  ${telefono}?text=${mensaje}`, '_blank');
   };
 
   // Login admin (simple toggle / placeholder)
@@ -540,20 +530,6 @@ const handleRegistroSubmit = async (e) => {
 
 
 
-const handlePagoMovilSubmit = async (e) => {
-  e.preventDefault();
-  setPagomovilWaiting(true);
-  await axios.post("http://localhost:4000/api/pagomovil-confirm", {
-    ...pagomovilForm,
-    monto: displayTotal // Total de tu compra
-  });
-};
-
-
-
-
-
-
 
 
 
@@ -629,8 +605,7 @@ useEffect(() => {
   };
 }, [mostrarTienda, esRegistro]); // se re-ejecuta si cambias de vista
 
-
-  const categoriasVibe = [...CATEGORIAS_PREDEFINIDAS, ...categoriasExtra];
+const categoriasVibe = [...CATEGORIAS_PREDEFINIDAS, ...categoriasExtra];
   // --------- VALORES DERIVADOS (para arreglar los errores de 'not defined') ----------
   const categoriasUnicas = React.useMemo(() => {
     const setCats = new Set((productos || []).map(p => (p.categoria || 'Otros')));
@@ -840,7 +815,7 @@ const handleSubmitPanel = async (e) => {
       console.warn('No se pudo obtener idToken (no crítico):', tErr);
     }
 
-    // Normalizar/asegurar valores antes de enviar
+// Normalizar/asegurar valores antes de enviar
     const nombre = String(nuevoProducto.nombre || '').trim();
     const descripcion = (nuevoProducto.descripcion || '').trim() || 'Sin descripción';
     const precioNum = Number(nuevoProducto.precio) || 0;
@@ -911,8 +886,6 @@ const handleSubmitPanel = async (e) => {
   setCategoriasExtra(nuevas);
   localStorage.setItem(LOCAL_STORAGE_KEY_CATEGORIAS, JSON.stringify(nuevas));
   };
-
-
 
 
 
@@ -995,7 +968,7 @@ const handleSubmitPanel = async (e) => {
           <button className="back-home" onClick={() => setEsLogin(false)}>← Volver al inicio</button>
           <h1 className="login-h1">Bienvenido</h1>
           <p className="login-p">Ingresa tus credenciales para acceder a la tienda.</p>
-          <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+          <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css  " />
 
 
 
@@ -1062,7 +1035,7 @@ const handleSubmitPanel = async (e) => {
     return (
       <div style={{ position: 'relative', overflow: 'hidden', minHeight: '100vh', backgroundColor: '#0d0d0d' }}>
         <style>{`
-            @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400 ;700;900&display=swap');
             .waves-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
             .wave-svg { position: absolute; width: 200%; height: 130%; top: -15%; left: 0; fill: none; stroke-width: 1.5; opacity: 0.35; animation: moveWaves 25s linear infinite; }
             @keyframes moveWaves { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
@@ -1080,14 +1053,13 @@ const handleSubmitPanel = async (e) => {
             .col-left h2 { font-size: 3.2rem; font-weight: 900; line-height: 0.9; margin-bottom: 20px; }
             .col-right h3 { font-size: 1.6rem; font-weight: 900; text-align: right; margin-bottom: 15px; }
             .phone-display { position: relative; height: 100%; display: flex; justify-content: center; align-items: flex-start; }
-            /* Ajustado para ser responsive: en desktop mantiene buen tamaño, en móviles ocupa el ancho disponible */
             .phone-main { width: 100%; max-width: 600px; z-index: 15; filter: drop-shadow(0 0 70px rgba(0,0,0,1)); position: relative; transform: translateY(-20px); height: auto; }
             .phone-echo { position: absolute; width: 80%; max-width: 400px; left: 70%; top: 50%; transform: translate(-50%, -50%); opacity: 0.18; z-index: 5; filter: blur(5px); }
             .btn-descubre { background-color: #e2ff00; color: black; border: none; padding: 15px 50px; border-radius: 50px; font-weight: 900; cursor: pointer; }
             .circular-logo { width: 140px; height: 140px; border-radius: 50%; background: #000; border: 1px solid #333; margin-left: auto; overflow: hidden; display: flex; align-items: center; justify-content: center; }
             .circular-logo img { width: 100%; height: 100%; object-fit: cover; }
 
-            /* Responsive: hacer que la landing se adapte bien en móviles */
+            /* Responsive: ACTIVADO para adaptarse en móviles */
             @media (max-width: 1024px) {
               header { padding: 16px 24px; }
               .content-grid { grid-template-columns: 1fr; gap: 20px; padding: 20px; margin-top: -20px; align-items: start; height: auto; }
@@ -1097,19 +1069,33 @@ const handleSubmitPanel = async (e) => {
               .phone-echo { display: none; }
             }
 
-            @media (max-width: 480px) {
-              .vibe-title { font-size: 2.2rem; }
-              header { flex-direction: column; gap: 12px; align-items: flex-start; padding: 12px; }
-              nav ul { flex-wrap: wrap; gap: 10px; }
-              .btn-registro { padding: 8px 18px; font-size: 0.85rem; }
+            @media (max-width: 768px) {
+              .vibe-title { font-size: 2.8rem; letter-spacing: 2px; }
               .col-left h2 { font-size: 1.8rem; }
+              .col-left p { font-size: 0.9rem; }
+              .col-right h3 { font-size: 1rem; text-align: left; }
+              .col-right p { font-size: 0.85rem; text-align: left; }
+              .circular-logo { width: 100px; height: 100px; margin-left: 0; }
               .phone-main { max-width: 320px; width: 90%; transform: translateY(0); }
-              .content-grid { padding: 12px; }
+              .content-grid { padding: 12px; gap: 15px; }
+              header { flex-direction: column; gap: 12px; align-items: center; padding: 12px; }
+              nav ul { flex-wrap: wrap; gap: 10px; justify-content: center; }
+              .btn-registro { padding: 8px 18px; font-size: 0.85rem; }
+              .btn-descubre { padding: 12px 30px; font-size: 0.9rem; }
+            }
+
+            @media (max-width: 480px) {
+              .vibe-title { font-size: 2.2rem; letter-spacing: 1px; margin-top: 5px; }
+              .col-left h2 { font-size: 1.5rem; }
+              .col-left p { font-size: 0.85rem; }
+              .phone-main { max-width: 280px; }
+              header { padding: 10px; }
+              .logo-frame { font-size: 1.2rem; }
+              nav ul li a { font-size: 0.75rem; }
             }
         `}</style>
 
         <div className="waves-bg">
-
             <svg className="wave-svg w1" viewBox="0 0 1440 320" preserveAspectRatio="none">
                 <path d="M0,160 C320,300 420,0 720,160 C1020,320 1120,20 1440,160"></path>
                 <path d="M0,180 C320,320 420,20 720,180 C1020,340 1120,40 1440,180"></path>
@@ -1124,7 +1110,6 @@ const handleSubmitPanel = async (e) => {
                     <ul>
                         <li><a href="#" style={{color:'#e2ff00', borderBottom: '2px solid #e2ff00'}}>INICIO</a></li>
                         <li><a href="#">SERVICIOS</a></li>
-                        {/*<li><a href="#">SUGERENCIAS</a></li>*/}
                         <li><a href="#">CONTACTO</a></li>
                         <li><a href="#" onClick={(e) => { e.preventDefault(); setEsLogin(true); }}>INICIAR SESIÓN</a></li>
                     </ul>
@@ -1155,144 +1140,129 @@ const handleSubmitPanel = async (e) => {
                 </div>
             </main>
         </div>
-        {/* --- MODAL CONTACTO (pegar dentro del return de la LANDING: if (!mostrarTienda && !esRegistro) {...}) --- */}
-{mostrarContacto && (
-  <div
-    style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.7)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 2000,
-      padding: 20
-    }}
-    onClick={() => setMostrarContacto(false)}
-    role="dialog"
-    aria-modal="true"
-    aria-label="Contacto WhatsApp"
-  >
-    <div
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        width: '100%',
-        maxWidth: 420,
-        background: '#0b1220',
-        borderRadius: 16,
-        padding: 20,
-        border: '1px solid rgba(255,255,255,0.06)',
-        color: '#e6eef8',
-        textAlign: 'center'
-      }}
-    >
-      <h2 style={{ marginTop: 0, marginBottom: 8 }}>Contactos</h2>
-      <p style={{ color: '#94a3b8', marginBottom: 16 }}>Selecciona a quién contactar por WhatsApp</p>
+        {/* --- MODAL CONTACTO --- */}
+        {mostrarContacto && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2000,
+              padding: 20
+            }}
+            onClick={() => setMostrarContacto(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Contacto WhatsApp"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: 420,
+                background: '#0b1220',
+                borderRadius: 16,
+                padding: 20,
+                border: '1px solid rgba(255,255,255,0.06)',
+                color: '#e6eef8',
+                textAlign: 'center'
+              }}
+            >
+              <h2 style={{ marginTop: 0, marginBottom: 8 }}>Contactos</h2>
+              <p style={{ color: '#94a3b8', marginBottom: 16 }}>Selecciona a quién contactar por WhatsApp</p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-        <button
-          onClick={() => {
-            // vendedor +58 4126553503 -> wa.me/584126553503
-            window.open('https://wa.me/584126553503', '_blank', 'noopener');
-          }}
-          style={{ padding: '12px 14px', borderRadius: 12, border: 'none', background: '#06b6d4', color: '#001219', fontWeight: 800, cursor: 'pointer' }}
-        >
-          Vendedor • +58 412 655 3503
-        </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+                <button
+                  onClick={() => {
+                    window.open('https://wa.me/584126553503 ', '_blank', 'noopener');
+                  }}
+                  style={{ padding: '12px 14px', borderRadius: 12, border: 'none', background: '#06b6d4', color: '#001219', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  Vendedor • +58 412 655 3503
+                </button>
 
-        <button
-          onClick={() => {
-            // programador +58 4246322487 -> wa.me/584246322487
-            window.open('https://wa.me/584246322487', '_blank', 'noopener');
-          }}
-          style={{ padding: '12px 14px', borderRadius: 12, border: 'none', background: '#25D366', color: '#001219', fontWeight: 800, cursor: 'pointer' }}
-        >
-          Programador • +58 424 632 2487
-        </button>
-      </div>
+                <button
+                  onClick={() => {
+                    window.open('https://wa.me/584246322487 ', '_blank', 'noopener');
+                  }}
+                  style={{ padding: '12px 14px', borderRadius: 12, border: 'none', background: '#25D366', color: '#001219', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  Programador • +58 424 632 2487
+                </button>
+              </div>
 
-      <button
-        onClick={() => setMostrarContacto(false)}
-        style={{ marginTop: 6, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', color: '#e6eef8', cursor: 'pointer' }}
-      >
-        Cerrar
-      </button>
-    </div>
-  </div>
+              <button
+                onClick={() => setMostrarContacto(false)}
+                style={{ marginTop: 6, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', color: '#e6eef8', cursor: 'pointer' }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
 
-  )}
-  {/* --- fin modal contacto --- */}
+        {/* --- PANEL SERVICIOS --- */}
+        {mostrarServiciosPanel && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2100,
+              padding: 20
+            }}
+            onClick={() => setMostrarServiciosPanel(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Cómo funcionaría en VibeMarket"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: 640,
+                background: '#0b1220',
+                borderRadius: 12,
+                padding: 22,
+                border: '1px solid rgba(255,255,255,0.06)',
+                color: '#e6eef8',
+                textAlign: 'left',
+                lineHeight: 1.4
+              }}
+            >
+              <h2 style={{ marginTop: 0, marginBottom: 8 }}>¿Cómo funcionaría en tu vibemarket?</h2>
 
+              <ol style={{ marginLeft: 18, marginBottom: 12 }}>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>seleccion de intereses:</strong> el usuario elije su producto y es se almacena en el carrito de compras.
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>administracion:</strong> al darle click en el carrito podrás ver la cantidad de productos que llevas incluyendo el monto y podrás eliminar los productos que no quieras comprar.
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>registro:</strong> solo los usuarios registrados podrán iniciar sesión a la página de lo contrario no podrán entrar ni comprar ni sugerir.
+                </li>
+              </ol>
 
+              <p style={{ marginBottom: 16 }}>Espero le guste mucho nuestra tienda web ☺️☺️☺️</p>
 
-
-         {/* --- PANEL SERVICIOS (nuevo) --- */}
-{mostrarServiciosPanel && (
-  <div
-    style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.7)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 2100,
-      padding: 20
-    }}
-    onClick={() => setMostrarServiciosPanel(false)}
-    role="dialog"
-    aria-modal="true"
-    aria-label="Cómo funcionaría en VibeMarket"
-  >
-    <div
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        width: '100%',
-        maxWidth: 640,
-        background: '#0b1220',
-        borderRadius: 12,
-        padding: 22,
-        border: '1px solid rgba(255,255,255,0.06)',
-        color: '#e6eef8',
-        textAlign: 'left',
-        lineHeight: 1.4
-      }}
-    >
-      <h2 style={{ marginTop: 0, marginBottom: 8 }}>¿Cómo funcionaría en tu vibemarket?</h2>
-
-      <ol style={{ marginLeft: 18, marginBottom: 12 }}>
-        <li style={{ marginBottom: 8 }}>
-          <strong>seleccion de intereses:</strong> el usuario elije su producto y es se almacena en el carrito de compras.
-        </li>
-        <li style={{ marginBottom: 8 }}>
-          <strong>administracion:</strong> al darle click en el carrito podrás ver la cantidad de productos que llevas incluyendo el monto y podrás eliminar los productos que no quieras comprar.
-        </li>
-        <li style={{ marginBottom: 8 }}>
-          <strong>registro:</strong> solo los usuarios registrados podrán iniciar sesión a la página de lo contrario no podrán entrar ni comprar ni sugerir.
-        </li>
-      </ol>
-
-      <p style={{ marginBottom: 16 }}>Espero le guste mucho nuestra tienda web ☺️☺️☺️</p>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button
-          onClick={() => { setMostrarServiciosPanel(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-          style={{ background: '#d4ff00', color: '#000', border: 'none', padding: '10px 14px', borderRadius: 10, fontWeight: 800, cursor: 'pointer' }}
-        >
-          Cerrar
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-{/* --- fin PANEL SERVICIOS --- */}
-
-               
-
-
-
-
-           
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => { setMostrarServiciosPanel(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  style={{ background: '#d4ff00', color: '#000', border: 'none', padding: '10px 14px', borderRadius: 10, fontWeight: 800, cursor: 'pointer' }}
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1301,9 +1271,9 @@ const handleSubmitPanel = async (e) => {
   if (esRegistro) {
     return (
       <div style={{ backgroundColor: '#050505', minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', color: '#fff', fontFamily: "'Inter', sans-serif" }}>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css  " />
         <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Montserrat:wght@700;800&display=swap');
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300  ;400;600&family=Montserrat:wght@700;800&display=swap');
           .fade-in { animation: fadeInUp 0.8s ease-out forwards; }
           @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
           .reg-header { text-align: center; margin-bottom: 60px; }
@@ -1357,7 +1327,7 @@ const handleSubmitPanel = async (e) => {
                   </div>
                   <div className="contact-item">
                     <span className="label-title"><i className="fa-brands fa-whatsapp"></i> Whatsapp</span>
-                    <a href="https://wa.me/584246322487" target="_blank" rel="noreferrer" className="contact-link">+58 424-6322487</a>
+                    <a href="https://wa.me/584246322487  " target="_blank" rel="noreferrer" className="contact-link">+58 424-6322487</a>
                   </div>
                 </div>
                 <form className="form-side" onSubmit={handleRegistroSubmit}>
@@ -1446,13 +1416,10 @@ const handleSubmitPanel = async (e) => {
 
   // --- VISTA DE TIENDA PREMIUM (GLASSMORPHISM) ---
   // --- VISTA DE TIENDA PREMIUM (ADAPTADA DEL HTML PROPORCIONADO) ---
-  console.log("RENDER displayTotal:", displayTotal);
-  console.log("RENDER carrito:", carrito);
+  // --- VISTA DE TIENDA PREMIUM ---
 return (
   <div style={{ backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh', position: 'relative', overflowX: 'hidden' }}>
-    {/*console.log("MOSTRANDO EN UI:", displayTotal);*/}
-    {/*console.log("CARRITO", carrito);*/}
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css " />
     <style>{`
       :root {
         --primary: #6366f1;
@@ -1500,12 +1467,7 @@ return (
       .modal-price-box { display:flex; align-items:center; gap:2rem; }
       .big-price { font-size:2rem; font-weight:800; color: var(--primary); }
       .buy-btn-large { background: white; color: black; border: none; padding: 1rem 2rem; border-radius: 15px; font-weight: 800; cursor: pointer; width: 100%; }
-      @media (max-width: 768px) {
-        .modal-body { grid-template-columns: 1fr; }
-        .search-box { display: none; }
-        .social-sidebar { display: none; }
-      }
-
+      
       /* Estilos para el panel de agregar producto (admin) */
       .panel-overlay { position: fixed; inset:0; background: rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1500; }
       .panel-card { width: 95%; max-width: 720px; background: #0b1220; border: 1px solid rgba(255,255,255,0.06); padding: 1.8rem; border-radius: 18px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); color: #e6eef8; }
@@ -1521,26 +1483,7 @@ return (
       .image-source { display:flex; gap:8px; align-items:center; }
       .image-preview-small { width:60px; height:60px; object-fit:cover; border-radius:8px; border:1px solid rgba(255,255,255,0.06); }
 
-      /* Más reglas responsive para la tienda */
-      @media (max-width: 1024px) {
-        .navbar { padding: 1rem 4%; }
-        .search-box { max-width: 50%; width: auto; }
-        .glass-grid { gap: 1rem; }
-      }
-      @media (max-width: 480px) {
-        .navbar { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 3%; }
-        .logo { font-size: 1.1rem; }
-        .search-box { display: none; }
-        .cart-wrapper { font-size: 1rem; }
-        .glass-grid { grid-template-columns: 1fr; padding: 0 12px; }
-        .card-image { height: 160px; }
-        .modal-content { padding: 1rem; }
-        .panel-card { padding: 1rem; }
-        /* bottom cart summary adaptativo */
-        .bottom-cart { width: 95% !important; left: 50% !important; transform: translateX(-50%) !important; padding: 14px !important; }
-      }
-
-      /* Estilos para el panel del carrito (nuevo) */
+      /* Estilos para el panel del carrito */
       .carrito-overlay { position: fixed; inset: 0; background: rgba(2,6,23,0.7); display:flex; align-items:flex-end; justify-content:center; z-index:1600; padding: 16px; }
       .carrito-panel { width: 100%; max-width: 900px; background: linear-gradient(180deg, rgba(14,20,33,0.98), rgba(12,16,28,0.98)); border-radius: 16px; border: 1px solid rgba(255,255,255,0.04); padding: 18px; box-shadow: 0 30px 60px rgba(2,6,23,0.6); color: #e6eef8; }
       .carrito-header { display:flex; justify-content:space-between; align-items:center; gap: 12px; margin-bottom: 12px; }
@@ -1559,6 +1502,68 @@ return (
       .carrito-actions { display:flex; gap:10px; }
       .carrito-btn { background: #d4ff00; color: #000; border: none; padding: 10px 14px; border-radius: 12px; font-weight: 800; cursor: pointer; }
       .carrito-btn.secondary { background: transparent; color: #e6eef8; border: 1px solid rgba(255,255,255,0.04); }
+
+      /* NUEVO: Estilos para modal de QR de pago móvil */
+      .qr-overlay { position: fixed; inset: 0; background: rgba(2,6,23,0.85); backdrop-filter: blur(8px); display:flex; align-items:center; justify-content:center; z-index:1700; padding: 16px; }
+      .qr-card { width: 100%; max-width: 420px; background: linear-gradient(180deg, rgba(14,20,33,0.98), rgba(12,16,28,0.98)); border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); padding: 28px; box-shadow: 0 30px 60px rgba(2,6,23,0.7); color: #e6eef8; text-align: center; }
+      .qr-title { font-size: 1.4rem; font-weight: 800; margin-bottom: 8px; color: #d4ff00; }
+      .qr-subtitle { color: #94a3b8; font-size: 0.95rem; margin-bottom: 20px; }
+      .qr-container { background: white; padding: 20px; border-radius: 16px; margin-bottom: 20px; display: flex; justify-content: center; align-items: center; }
+      .qr-placeholder { width: 200px; height: 200px; background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%); border-radius: 12px; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #64748b; font-size: 0.9rem; }
+      .qr-instructions { background: rgba(255,255,255,0.03); border-radius: 12px; padding: 16px; margin-bottom: 20px; text-align: left; }
+      .qr-instructions h4 { color: #d4ff00; margin: 0 0 10px 0; font-size: 0.95rem; }
+      .qr-instructions ol { margin: 0; padding-left: 18px; color: #cbd5e1; font-size: 0.9rem; line-height: 1.6; }
+      .qr-instructions li { margin-bottom: 6px; }
+      .qr-close-btn { background: transparent; color: #94a3b8; border: 1px solid rgba(255,255,255,0.1); padding: 10px 24px; border-radius: 12px; cursor: pointer; font-weight: 600; transition: all 0.3s; }
+      .qr-close-btn:hover { background: rgba(255,255,255,0.05); color: #e6eef8; }
+
+      /* NUEVO: Estilos para selección de métodos de pago */
+      .payment-options { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+      .payment-option-btn { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 14px 18px; border-radius: 12px; cursor: pointer; transition: all 0.3s; color: #e6eef8; text-align: left; }
+      .payment-option-btn:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.15); }
+      .payment-option-btn.selected { background: rgba(212,255,0,0.1); border-color: #d4ff00; }
+      .payment-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; }
+      .payment-icon.whatsapp { background: #25D366; color: white; }
+      .payment-icon.qr { background: #6366f1; color: white; }
+      .payment-info { flex: 1; }
+      .payment-info .title { font-weight: 700; font-size: 1rem; }
+      .payment-info .desc { font-size: 0.85rem; color: #94a3b8; margin-top: 2px; }
+
+      /* Media queries ACTIVADOS para responsive en móvil */
+      @media (max-width: 1024px) {
+        .navbar { padding: 1rem 4%; flex-wrap: wrap; gap: 10px; }
+        .search-box { max-width: 45%; width: 100%; }
+        .glass-grid { gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+        .social-sidebar { display: none; }
+      }
+      
+      @media (max-width: 768px) {
+        .modal-body { grid-template-columns: 1fr; }
+        .navbar { flex-direction: column; align-items: stretch; gap: 10px; padding: 1rem 3%; }
+        .search-container { order: 3; width: 100%; margin-top: 10px; }
+        .search-box { display: flex; max-width: 100%; width: 100%; }
+        .nav-actions { justify-content: center; flex-wrap: wrap; order: 2; }
+        .logo { order: 1; text-align: center; margin-bottom: 5px; }
+        .glass-grid { grid-template-columns: 1fr; padding: 0 12px; }
+        .card-image { height: 180px; }
+        .modal-content { padding: 1rem; max-width: 95%; }
+        .panel-card { padding: 1rem; max-width: 95%; }
+        .carrito-panel { max-width: 100%; }
+        .qr-card { padding: 20px; }
+      }
+      
+      @media (max-width: 480px) {
+        .navbar { padding: 12px 3%; }
+        .logo { font-size: 1.1rem; }
+        .cart-wrapper { font-size: 1rem; }
+        .glass-grid { grid-template-columns: 1fr; }
+        .card-image { height: 160px; }
+        .panel-form { grid-template-columns: 1fr; }
+        .bottom-cart { width: 95% !important; left: 50% !important; transform: translateX(-50%) !important; padding: 14px !important; flex-direction: column; gap: 10px; }
+        .bottom-cart h3 { font-size: 1rem; }
+        .payment-option-btn { padding: 12px 14px; }
+        .payment-icon { width: 36px; height: 36px; font-size: 1.1rem; }
+      }
     `}</style>
 
     <div className="bg-glow" />
@@ -1612,7 +1617,7 @@ return (
           </div>
         )}
 
-        <div style={{ position: "relative", marginRight: 20 }}>
+<div style={{ position: "relative", marginRight: 20 }}>
   <button
     onClick={() => setMostrarMenuCategorias(v => !v)}
     style={{
@@ -1682,7 +1687,7 @@ return (
   )}
 </div>
 
-        {/* NUEVO: Botón Sugerencias — aparece solo dentro de la tienda y solo para usuarios autenticados */}
+{/* NUEVO: Botón Sugerencias — aparece solo dentro de la tienda y solo para usuarios autenticados */}
         {currentUser && (
           <button
             onClick={abrirSugerencias}
@@ -1707,7 +1712,7 @@ return (
     <aside className="social-sidebar" aria-hidden>
       <a className="social-link" href="#" onClick={(e)=>e.preventDefault()}><i className="fa-brands fa-instagram" /></a>
       <a className="social-link" href="#" onClick={(e)=>e.preventDefault()}><i className="fa-brands fa-twitter" /></a>
-      <a className="social-link" href="https://wa.me/584246322487" target="_blank" rel="noreferrer"><i className="fa-brands fa-whatsapp" /></a>
+      <a className="social-link" href="https://wa.me/584246322487  " target="_blank" rel="noreferrer"><i className="fa-brands fa-whatsapp" /></a>
     </aside>
 
     <main className="container">
@@ -1724,7 +1729,7 @@ return (
               </button>
             )}
             <div className="card-image">
-              <img src={p.imagen || "https://via.placeholder.com/300x200?text=VibeMarket"} alt={p.nombre} />
+              <img src={p.imagen || "https://via.placeholder.com/300x200?text=VibeMarket  "} alt={p.nombre} />
             </div>
             <div className="card-content">
               <h3>{p.nombre}</h3>
@@ -1917,7 +1922,7 @@ return (
             {carrito.length === 0 && <div style={{ color: '#94a3b8', textAlign: 'center', padding: 12 }}>Tu carrito está vacío</div>}
             {carrito.map(item => (
               <div className="carrito-item" key={item._id}>
-                <img src={item.imagen || "https://via.placeholder.com/80x80?text=Vibe"} alt={item.nombre} />
+                <img src={item.imagen || "https://via.placeholder.com/80x80?text=Vibe  "} alt={item.nombre} />
                 <div className="meta">
                   <div className="name">{item.nombre}</div>
                   <div className="price">${Number(item.precio).toFixed(2)} • Subtotal: ${(Number(item.precio) * (item.cantidad || 1)).toFixed(2)}</div>
@@ -1938,62 +1943,140 @@ return (
           </div>
 
          <div className="carrito-footer">
-  {/* Selección método de pago */}
+  {/* Selección de métodos de pago */}
   {!metodoPago && (
-    <div style={{ display: "flex", gap: 16 }}>
-      <button onClick={() => setMetodoPago("whatsapp")} className="carrito-btn">Pagar por WhatsApp</button>
-      <button onClick={() => { setMetodoPago("pagomovil"); fetchPagoMovilData(); setShowPagoMovilPanel(true); }} className="carrito-btn">Pago Móvil C2P</button>
+    <div className="payment-options">
+      <p style={{ color: '#94a3b8', marginBottom: 12, fontSize: '0.95rem' }}>Selecciona un método de pago:</p>
+      
+      <button 
+        onClick={() => setMetodoPago("whatsapp")} 
+        className="payment-option-btn"
+      >
+        <div className="payment-icon whatsapp">
+          <i className="fa-brands fa-whatsapp"></i>
+        </div>
+        <div className="payment-info">
+          <div className="title">Pagar por WhatsApp</div>
+          <div className="desc">Envía tu pedido directamente por WhatsApp</div>
+        </div>
+      </button>
+
+      <button 
+        onClick={() => setMetodoPago("qr")} 
+        className="payment-option-btn"
+      >
+        <div className="payment-icon qr">
+          <i className="fa-solid fa-qrcode"></i>
+        </div>
+        <div className="payment-info">
+          <div className="title">Pago Móvil (QR)</div>
+          <div className="desc">Escanea el código QR para pagar</div>
+        </div>
+      </button>
     </div>
   )}
 
   {/* Panel Pago WhatsApp */}
   {metodoPago === "whatsapp" && (
-    <button className="carrito-btn" onClick={() => { enviarWhatsApp(); setMostrarCarritoPanel(false); }}>Enviar pedido por WhatsApp</button>
-  )}
-
-  {/* Panel Pago Móvil C2P */}
-  {metodoPago === "pagomovil" && showPagoMovilPanel && (
-    <div style={{ background: "#1e293b", padding: 24, borderRadius: 16 }}>
-      <h2>Paga por Pago Móvil C2P</h2>
-      <div>
-        <p><b>Teléfono del comercio:</b> {pagomovilData.telefono}</p>
-        <p><b>RIF:</b> {pagomovilData.rif}</p>
-        <p><b>Total:</b> {displayTotal.toFixed(2)} Bs</p>
-        <form onSubmit={handlePagoMovilSubmit}>
-          <input placeholder="Nombre Completo" required value={pagomovilForm.nombre} onChange={e => setPagomovilForm({ ...pagomovilForm, nombre: e.target.value })} />
-          <input placeholder="Cédula" required value={pagomovilForm.cedula} onChange={e => setPagomovilForm({ ...pagomovilForm, cedula: e.target.value })} />
-          <input placeholder="Teléfono" required value={pagomovilForm.telefono} onChange={e => setPagomovilForm({ ...pagomovilForm, telefono: e.target.value })} />
-          <input placeholder="Referencia del pago" required value={pagomovilForm.referencia} onChange={e => setPagomovilForm({ ...pagomovilForm, referencia: e.target.value })} />
-          <button type="submit" className="carrito-btn">Confirmar Pago</button>
-        </form>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+      <button 
+        className="carrito-btn" 
+        onClick={() => { enviarWhatsApp(); setMostrarCarritoPanel(false); setMetodoPago(""); }}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+      >
+        <i className="fa-brands fa-whatsapp"></i>
+        Enviar pedido por WhatsApp
+      </button>
+      <button 
+        className="carrito-btn secondary" 
+        onClick={() => setMetodoPago("")}
+      >
+        ← Volver a métodos de pago
+      </button>
     </div>
   )}
 
-  {/* Espera cargando */}
-  {pagomovilWaiting && (
-    <div style={{ background: "#0b1220", color: "#d4ff00", textAlign: "center", padding: 32, borderRadius: 16 }}>
-      <div className="spinner" style={{ margin: "20px auto" }}>
-        <i className="fa-solid fa-spinner fa-spin fa-2x"></i>
-      </div>
-      <h2>Estamos validando tu pago con el banco, por favor no cierres esta ventana</h2>
-    </div>
-  )}
-
-  {/* Mensaje de éxito */}
-  {pagomovilSuccess && (
-    <div style={{ background: "#d4ff00", color: "#08111a", textAlign: "center", padding: 32, borderRadius: 16 }}>
-      <h2>¡Pago Exitoso!</h2>
-      <p>Referencia: {pagomovilSuccess.referencia}</p>
-      <button onClick={() => window.open(`http://localhost:4000/api/factura/${pagomovilFacturaId}`)} className="carrito-btn">Descargar Factura PDF</button>
-      <button className="carrito-btn" onClick={() => window.print()}>Imprimir</button>
+  {/* Panel Pago QR */}
+  {metodoPago === "qr" && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+      <button 
+        className="carrito-btn" 
+        onClick={() => setMostrarModalQR(true)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+      >
+        <i className="fa-solid fa-qrcode"></i>
+        Ver QR de Pago Móvil
+      </button>
+      <button 
+        className="carrito-btn secondary" 
+        onClick={() => setMetodoPago("")}
+      >
+        ← Volver a métodos de pago
+      </button>
     </div>
   )}
 </div>
 
-        
+        </div>
+      </div>
+    )}
 
+    {/* NUEVO: Modal de QR de Pago Móvil */}
+    {mostrarModalQR && (
+      <div className="qr-overlay" onClick={() => setMostrarModalQR(false)}>
+        <div className="qr-card" onClick={(e) => e.stopPropagation()}>
+          <div className="qr-title">
+            <i className="fa-solid fa-mobile-screen" style={{ marginRight: 8 }}></i>
+            Pago Móvil
+          </div>
+          <div className="qr-subtitle">
+            Total a pagar: <strong style={{ color: '#d4ff00' }}>${displayTotal.toFixed(2)}</strong>
+          </div>
+          
+          <div className="qr-container">
+            {/* Aquí puedes reemplazar el placeholder con tu imagen de QR real */}
+            <div className="qr-container">
+              <img
+              src={qrPagoMovil}
+              alt="QR de Pago Móvil"
+              style={{ maxWidth: '280px', width: '100%', borderRadius: 12 }} 
+              />
+              </div>
+            {/* Si tienes una imagen de QR real, usa esto en su lugar: */}
+            {/* <img src="/ruta-a-tu-qr.png" alt="QR de Pago Móvil" style={{ maxWidth: '100%', borderRadius: 12 }} /> */}
+          </div>
 
+          <div className="qr-instructions">
+            <h4><i className="fa-solid fa-circle-info" style={{ marginRight: 6 }}></i> Instrucciones:</h4>
+            <ol>
+              <li>Abre tu aplicación de banco BDV en tu teléfono</li>
+              <li>Selecciona la opción "Pago Móvil" o "Escanea QR"</li>
+              <li>Apunta la cámara al código QR</li>
+              <li>Verifica el monto y confirma el pago</li>
+              <li>Envía el comprobante por WhatsApp al vendedor</li>
+            </ol>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <button 
+              className="qr-close-btn" 
+              onClick={() => setMostrarModalQR(false)}
+            >
+              Cerrar
+            </button>
+            <button 
+              className="carrito-btn"
+              onClick={() => {
+                setMostrarModalQR(false);
+                setMostrarCarritoPanel(false);
+                setMetodoPago("");
+                alert('¡Gracias por tu compra! Recuerda enviar el comprobante por WhatsApp.');
+              }}
+            >
+              <i className="fa-brands fa-whatsapp" style={{ marginRight: 6 }}></i>
+              Ya pagué
+            </button>
+          </div>
         </div>
       </div>
     )}
@@ -2075,7 +2158,7 @@ return (
         {productoSeleccionado && (
           <div className="modal-body">
             <div className="modal-image-container">
-              <img src={productoSeleccionado.imagen || "https://via.placeholder.com/400?text=VibeMarket"} alt={productoSeleccionado.nombre} />
+              <img src={productoSeleccionado.imagen || "https://via.placeholder.com/400?text=VibeMarket  "} alt={productoSeleccionado.nombre} />
             </div>
             <div className="modal-details">
               <h2>{productoSeleccionado.nombre}</h2>
